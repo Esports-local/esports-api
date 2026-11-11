@@ -15,7 +15,7 @@
 - `vod/views.py` + `config/urls.py`: `/series`, `/series/{id}`, `/series/{id}/predict`(GET·POST), `/episodes/{id}`, `/episodes/{id}/analysis`(main 원본, `start_sec`), `/episodes/{id}/reviews`(GET·POST), `/health`
 - 에러는 `vod/exceptions.py`에서 `{"error": "메시지"}`로 통일. 예측은 `vod/predict.py` (`PREDICT_BACKEND=mock`: 즉시 가짜 결과)
 - 데이터: `manage.py seed_demo [--reset]` (데모 작품). TMDB `crawl` 명령은 아직 없음
-- 테스트: 레포 최상위 `tests/`에 모아 둔다 (스펙 시트 탭별 `test_series.py`, `test_episodes.py`, 공통 `base.py`). 실행 `docker compose exec api python manage.py test`
+- 테스트: 레포 최상위 `tests/`에 모아 둔다 (리소스별 `test_series.py`, `test_episodes.py`, 에러 형식 `test_errors.py`, 공통 `base.py`). 실행 `docker compose exec api python manage.py test`
 환경변수는 `.env.example` 참고 (`DJANGO_*`, `DATABASE_URL`, `S3_*`, `MAIN_URL`, `API_URL`). `DATABASE_URL`이 없으면 sqlite.
 - MinIO 이미지: 공식 `minio/minio`는 배포 중단 → `chainguard/minio`를 digest로 고정. `mc`가 없어 버킷은 `init_storage`(boto3)로 만든다
 - 컴퓨터마다 `.env`만 다르게 둔다. `COMPOSE_PROFILES=minio`면 MinIO를 이 컴퓨터에서 띄우고, 비우면 `S3_*`가 가리키는 외부 저장소 사용 (PLAN.md 3장)

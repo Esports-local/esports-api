@@ -1,4 +1,4 @@
-"""데이터 모델. 필드는 스펙 시트(호출 목록, series, episodes 탭)를 따른다.
+"""데이터 모델. 필드는 스펙 시트(spec_seat 탭 + 엔드포인트별 탭)를 따른다.
 
 - 작품·회차·등장인물은 크롤링(TMDB)으로 채운다. api 는 조회만 한다.
 - main 분석 결과(episode.json)는 Episode.analysis 에 통째로 저장한다 (스키마 미확정).

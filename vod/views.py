@@ -1,4 +1,4 @@
-"""ui → api 엔드포인트. 스펙은 스펙 시트(호출 목록, series, episodes 탭) 기준."""
+"""ui → api 엔드포인트. 스펙은 스펙 시트(spec_seat 탭 + 엔드포인트별 탭) 기준."""
 
 from django.conf import settings
 from django.db import connection
