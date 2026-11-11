@@ -138,12 +138,14 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [],
     'DEFAULT_PERMISSION_CLASSES': [],
     'UNAUTHENTICATED_USER': None,
+    'EXCEPTION_HANDLER': 'vod.exceptions.handler',  # 에러는 {"error": "메시지"}
 }
 
 SPECTACULAR_SETTINGS = {
     'TITLE': 'VOD api',
     'DESCRIPTION': 'ui → api 스펙 (../PLAN.md 5장)',
     'VERSION': '0.1.0',
+    'ENUM_NAME_OVERRIDES': {'JobStatusEnum': 'vod.models.JobStatus'},
 }
 
 
@@ -162,4 +164,12 @@ S3_PRESIGN_EXPIRES = int(os.environ.get("S3_PRESIGN_EXPIRES", "3600"))
 
 MAIN_URL = os.environ.get("MAIN_URL", "http://localhost:8001")
 API_URL = os.environ.get("API_URL", "http://localhost:8000")
+
+# 예측 백엔드. mock: 요청 즉시 가짜 결과 (LLM 연동 전 ui 개발용)
+PREDICT_BACKEND = os.environ.get("PREDICT_BACKEND", "mock")
+
+
+# TMDB (크롤링: 작품·회차·등장인물). 토큰 또는 키 중 하나
 TMDB_ACCESS_TOKEN = os.environ.get("TMDB_ACCESS_TOKEN", "")
+TMDB_API_KEY = os.environ.get("TMDB_API_KEY", "")
+TMDB_LANGUAGE = os.environ.get("TMDB_LANGUAGE", "ko-KR")
