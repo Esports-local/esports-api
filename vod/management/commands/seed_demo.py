@@ -3,7 +3,7 @@
     python manage.py seed_demo           # 작품 1개, 회차 12개(1~10화 분석 완료), 등장인물 3명
     python manage.py seed_demo --reset   # 데모 작품을 지우고 다시 만든다
 
-분석 결과는 storycast-analyzer 샘플(episode.json) 모양을 흉내 낸 최소 JSON 이다.
+분석 결과는 esports-analyzer 샘플(episode.json) 모양을 흉내 낸 최소 JSON 이다.
 """
 
 import datetime as dt

@@ -14,7 +14,7 @@
 - [x] Swagger `/api/docs/`, 스키마 검증 통과
 - [x] 테스트 22개 (`tests/`, 스펙 시트 탭별)
 - [x] `seed_demo` 데모 작품 (12화, 1~10화 분석 완료)
-- [x] 데모 1화에 storycast-analyzer `tts_drama` HLS 연결 → 실제 재생 확인 (master → index → ts, CORS)
+- [x] 데모 1화에 esports-analyzer `tts_drama` HLS 연결 → 실제 재생 확인 (master → index → ts, CORS)
 - [x] 코드리뷰 1~9번 수정
 - [x] TMDB API 키 설정·인증 확인
 
@@ -34,7 +34,7 @@
 - [ ] 회차 문서: `GET /episodes/{id}/document` (LLM 입력 header + body, 디버그용)
 
 ## 검수
-- [ ] ui `web/api_client.py`의 `get_analysis`, `get_line_reviews`, `save_line_review`를 6~8번 호출로 교체 (storycast-ui)
+- [ ] ui `web/api_client.py`의 `get_analysis`, `get_line_reviews`, `save_line_review`를 6~8번 호출로 교체 (esports-ui)
 - [ ] 검수 결과 활용: 고친 대사(fixed)를 예측 입력(회차 문서)에 반영할지 결정
 - [ ] 장면 단위 검수(지문·유형·장면 경계)가 필요한지 결정
 
@@ -56,7 +56,7 @@
 - [ ] 비동기 실행 (요청 → queued → running → done/failed)
 - [ ] 개발 중 호출 수 줄이기 (결과 저장 재사용, mock 유지)
 
-## ui (storycast-ui, 관리자 페이지 형식)
+## ui (esports-ui, 관리자 페이지 형식)
 - [ ] 작품 목록 → 작품 상세(회차·등장인물 표) → 회차 상세(hls.js 재생) → 예측 폼 → 결과 표(근거 누르면 영상 이동)
 
 ## 정리

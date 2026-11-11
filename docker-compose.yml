@@ -4,7 +4,7 @@
 # MinIO 는 .env 의 COMPOSE_PROFILES=minio 일 때만 이 컴퓨터에서 띄운다.
 # 다른 곳의 저장소를 쓰려면 COMPOSE_PROFILES 를 비우고 S3_* 를 그 주소로 바꾼다.
 # 데이터는 named volume(pgdata, miniodata)에 유지된다. 지우려면 docker compose down -v
-name: storycast  # 네트워크 storycast_default, 볼륨 storycast_* (폴더 이름과 무관)
+name: esports  # 네트워크 esports_default, 볼륨 esports_* (폴더 이름과 무관)
 services:
   api:
     build: .
