@@ -106,9 +106,9 @@ AUTH_PASSWORD_VALIDATORS = [
 # Internationalization
 # https://docs.djangoproject.com/en/6.1/topics/i18n/
 
-LANGUAGE_CODE = 'en-us'
+LANGUAGE_CODE = 'ko-kr'  # DRF 기본 에러 메시지도 한국어
 
-TIME_ZONE = 'UTC'
+TIME_ZONE = 'UTC'  # 저장은 UTC, 응답의 시각은 ISO8601
 
 USE_I18N = True
 
