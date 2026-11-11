@@ -3,7 +3,7 @@
 from rest_framework import serializers
 
 from vod import storage
-from vod.models import Character, Episode, JobStatus, Prediction, Series
+from vod.models import Character, Episode, JobStatus, LineReview, Prediction, Series, Verdict
 
 
 def _blank_to_none(value):
@@ -131,3 +131,36 @@ class PredictionSerializer(serializers.ModelSerializer):
 
 class ErrorSerializer(serializers.Serializer):
     error = serializers.CharField()
+
+
+# ---------------------------------------------------------------- 검수
+
+class LineReviewSerializer(serializers.ModelSerializer):
+    text = serializers.SerializerMethodField()
+
+    class Meta:
+        model = LineReview
+        fields = ["scene_id", "index", "verdict", "text", "updated_at"]
+
+    def get_text(self, obj) -> str | None:
+        return _blank_to_none(obj.text)
+
+
+class LineReviewListSerializer(serializers.Serializer):
+    episode_id = serializers.IntegerField()
+    items = LineReviewSerializer(many=True)
+
+
+class LineReviewRequestSerializer(serializers.Serializer):
+    scene_id = serializers.IntegerField(min_value=1, help_text="장면 id (analysis scenes[].id)")
+    index = serializers.IntegerField(min_value=0, help_text="장면 안 대사 순서 (0부터)")
+    verdict = serializers.ChoiceField(
+        choices=[*Verdict.values, "clear"], help_text="ok | wrong | fixed | clear(판정 지우기)",
+        error_messages={"invalid_choice": "verdict 는 ok, wrong, fixed, clear 중 하나여야 합니다"},
+    )
+    text = serializers.CharField(required=False, allow_blank=True, allow_null=True,
+                                 help_text="고친 대사. fixed 일 때 필수이고 원문과 달라야 한다")
+
+
+class LineReviewSavedSerializer(serializers.Serializer):
+    review = LineReviewSerializer(allow_null=True)

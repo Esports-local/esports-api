@@ -3,6 +3,7 @@
 from django.conf import settings
 from django.db import connection
 from django.http import Http404
+from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, extend_schema, inline_serializer
 from rest_framework import serializers as s
 from rest_framework.decorators import api_view
@@ -10,10 +11,14 @@ from rest_framework.response import Response
 
 from vod import predict, storage
 from vod.exceptions import ApiError
-from vod.models import Episode, JobStatus, Prediction, Series
+from vod.models import Episode, JobStatus, LineReview, Prediction, Series, Verdict
 from vod.serializers import (
     EpisodeDetailSerializer,
     ErrorSerializer,
+    LineReviewListSerializer,
+    LineReviewRequestSerializer,
+    LineReviewSavedSerializer,
+    LineReviewSerializer,
     PredictAcceptedSerializer,
     PredictionSerializer,
     PredictRequestSerializer,
@@ -24,6 +29,8 @@ from vod.serializers import (
 
 SERIES_NOT_FOUND = "작품을 찾을 수 없습니다"
 EPISODE_NOT_FOUND = "회차를 찾을 수 없습니다"
+ANALYSIS_NOT_FOUND = "분석 결과가 없습니다"
+LINE_NOT_FOUND = "대사를 찾을 수 없습니다"
 
 
 def _get_or_404(queryset, pk: int, message: str):
@@ -125,3 +132,52 @@ def _start_predict(series: Series, data) -> Response:
 def episode_detail(request, pk: int):
     ep = _get_or_404(Episode.objects, pk, EPISODE_NOT_FOUND)
     return Response(EpisodeDetailSerializer(ep).data)
+
+
+def _analyzed_episode(pk: int) -> Episode:
+    """분석 결과가 있는 회차. 회차가 없거나 분석 결과가 없으면 404."""
+    ep = _get_or_404(Episode.objects, pk, EPISODE_NOT_FOUND)
+    if ep.analyze_status != JobStatus.DONE or not ep.analysis:
+        raise Http404(ANALYSIS_NOT_FOUND)
+    return ep
+
+
+@extend_schema(tags=["episodes"], summary="6. 회차 분석 결과 원본 (main episode.json, start_sec/end_sec)",
+               responses={200: OpenApiTypes.OBJECT, 404: ErrorSerializer})
+@api_view(["GET"])
+def episode_analysis(request, pk: int):
+    return Response(_analyzed_episode(pk).analysis)
+
+
+@extend_schema(methods=["GET"], tags=["episodes"], summary="7. 대사 검수 목록",
+               responses={200: LineReviewListSerializer, 404: ErrorSerializer})
+@extend_schema(methods=["POST"], tags=["episodes"], summary="8. 대사 판정 저장 (clear 면 지움)",
+               request=LineReviewRequestSerializer,
+               responses={200: LineReviewSavedSerializer, 400: ErrorSerializer, 404: ErrorSerializer})
+@api_view(["GET", "POST"])
+def episode_reviews(request, pk: int):
+    ep = _analyzed_episode(pk)
+    if request.method == "GET":
+        items = LineReviewSerializer(ep.line_reviews.all(), many=True).data
+        return Response({"episode_id": ep.id, "items": items})
+
+    req = LineReviewRequestSerializer(data=request.data)
+    req.is_valid(raise_exception=True)
+    scene_id, index, verdict = (req.validated_data[k] for k in ("scene_id", "index", "verdict"))
+    text = (req.validated_data.get("text") or "").strip()
+
+    scene = next((sc for sc in ep.analysis.get("scenes", []) if sc.get("id") == scene_id), None)
+    lines = scene.get("lines", []) if scene else []
+    if index >= len(lines):
+        raise Http404(LINE_NOT_FOUND)
+
+    if verdict == "clear":
+        ep.line_reviews.filter(scene_id=scene_id, index=index).delete()
+        return Response({"review": None})
+    if verdict == Verdict.FIXED and (not text or text == lines[index].get("text", "").strip()):
+        raise ApiError("고친 대사를 입력해 주세요")
+    review, _ = LineReview.objects.update_or_create(
+        episode=ep, scene_id=scene_id, index=index,
+        defaults={"verdict": verdict, "text": text if verdict == Verdict.FIXED else ""},
+    )
+    return Response({"review": LineReviewSerializer(review).data})
