@@ -11,3 +11,5 @@ outputs/
 *.mkv
 .idea/
 .vscode/
+videos/*
+!videos/.gitkeep

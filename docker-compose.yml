@@ -1,0 +1,60 @@
+# 개발용 통합 실행: api + Postgres (+ MinIO)
+#   cp .env.example .env      # 컴퓨터마다 .env 만 다르게 둔다
+#   docker compose up --build
+# MinIO 는 .env 의 COMPOSE_PROFILES=minio 일 때만 이 컴퓨터에서 띄운다.
+# 다른 곳의 저장소를 쓰려면 COMPOSE_PROFILES 를 비우고 S3_* 를 그 주소로 바꾼다.
+# 데이터는 named volume(pgdata, miniodata)에 유지된다. 지우려면 docker compose down -v
+services:
+  api:
+    build: .
+    env_file: .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - .:/app  # 코드 수정 시 자동 reload
+      - ${VIDEOS_DIR:-./videos}:/videos:ro  # add_videos 가 읽는 원본 폴더 (구글 드라이브 폴더 등)
+    depends_on:
+      db:
+        condition: service_healthy
+      minio:
+        condition: service_started
+        required: false  # COMPOSE_PROFILES 에 minio 가 없으면 띄우지 않음
+    command: >
+      sh -c "python manage.py migrate &&
+             python manage.py init_storage &&
+             python manage.py runserver 0.0.0.0:8000"
+
+  db:
+    image: postgres:17
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-vod}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-vod}
+      POSTGRES_DB: ${POSTGRES_DB:-vod}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
+  minio:
+    # 공식 minio/minio 이미지는 배포 중단 → MinIO 서버 재패키징 이미지(chainguard), digest 고정
+    profiles: ["minio"]
+    image: chainguard/minio@sha256:fb893e36fc369d41e92f678b17ec27378fa5bf0576aeef7ac15460c13629ab5a
+    command: ["server", "/data", "--console-address", ":9001"]
+    environment:
+      MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"  # ui(hls.js)가 브라우저에서 직접 재생
+    ports:
+      - "9000:9000"  # S3 API
+      - "9001:9001"  # 웹 콘솔
+    volumes:
+      - miniodata:/data
+
+volumes:
+  pgdata:
+  miniodata:

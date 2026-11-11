@@ -13,6 +13,8 @@ https://docs.djangoproject.com/en/6.1/ref/settings/
 import os
 from pathlib import Path
 
+import dj_database_url
+
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -38,6 +40,9 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework',
+    'drf_spectacular',
+    'vod',
 ]
 
 MIDDLEWARE = [
@@ -73,11 +78,9 @@ WSGI_APPLICATION = 'config.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.1/ref/settings/#databases
 
+# DATABASE_URL 이 없으면 sqlite (compose 밖에서 manage.py 명령 돌릴 때)
 DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
-    }
+    'default': dj_database_url.config(default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}", conn_max_age=60),
 }
 
 
@@ -126,3 +129,37 @@ MAILERS = {
         'BACKEND': 'django.core.mail.backends.console.EmailBackend',
     },
 }
+
+
+# DRF / OpenAPI
+
+REST_FRAMEWORK = {
+    'DEFAULT_SCHEMA_CLASS': 'drf_spectacular.openapi.AutoSchema',
+    'DEFAULT_AUTHENTICATION_CLASSES': [],
+    'DEFAULT_PERMISSION_CLASSES': [],
+    'UNAUTHENTICATED_USER': None,
+}
+
+SPECTACULAR_SETTINGS = {
+    'TITLE': 'VOD api',
+    'DESCRIPTION': 'ui → api 스펙 (../PLAN.md 5장)',
+    'VERSION': '0.1.0',
+}
+
+
+# MinIO (S3 호환)
+
+S3_ENDPOINT_URL = os.environ.get("S3_ENDPOINT_URL", "http://localhost:9000")
+S3_PUBLIC_ENDPOINT_URL = os.environ.get("S3_PUBLIC_ENDPOINT_URL", S3_ENDPOINT_URL)
+S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY", "minioadmin")
+S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY", "minioadmin")
+S3_BUCKET = os.environ.get("S3_BUCKET", "vod")
+S3_REGION = os.environ.get("S3_REGION", "us-east-1")
+S3_PRESIGN_EXPIRES = int(os.environ.get("S3_PRESIGN_EXPIRES", "3600"))
+
+
+# 다른 서비스
+
+MAIN_URL = os.environ.get("MAIN_URL", "http://localhost:8001")
+API_URL = os.environ.get("API_URL", "http://localhost:8000")
+TMDB_ACCESS_TOKEN = os.environ.get("TMDB_ACCESS_TOKEN", "")
