@@ -98,3 +98,33 @@ class Prediction(models.Model):
 
     def __str__(self):
         return f"{self.series} → {self.target}화 ({self.status})"
+
+
+class Verdict(models.TextChoices):
+    OK = "ok"  # 맞음
+    WRONG = "wrong"  # 틀림
+    FIXED = "fixed"  # 수정 (text 에 고친 대사)
+
+
+class LineReview(models.Model):
+    """대사 하나의 검수 판정. 대사는 (장면 id, 장면 안 순서 index)로 가리킨다.
+
+    index 는 Episode.analysis 의 scenes[].lines 순서라서, 회차를 다시 분석하면
+    그 회차의 LineReview 를 모두 지워야 한다 (분석 결과 저장 코드에서 처리).
+    """
+
+    episode = models.ForeignKey(Episode, on_delete=models.CASCADE, related_name="line_reviews")
+    scene_id = models.PositiveIntegerField()
+    index = models.PositiveIntegerField()
+    verdict = models.CharField(max_length=10, choices=Verdict.choices)
+    text = models.TextField(blank=True)  # fixed 일 때만
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["episode_id", "scene_id", "index"]
+        constraints = [
+            models.UniqueConstraint(fields=["episode", "scene_id", "index"], name="uniq_line_review"),
+        ]
+
+    def __str__(self):
+        return f"{self.episode} 장면{self.scene_id}#{self.index} {self.verdict}"

@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from vod.models import Character, Episode, Prediction, Series
+from vod.models import Character, Episode, LineReview, Prediction, Series
 
 
 class EpisodeInline(admin.TabularInline):
@@ -36,3 +36,9 @@ class CharacterAdmin(admin.ModelAdmin):
 @admin.register(Prediction)
 class PredictionAdmin(admin.ModelAdmin):
     list_display = ["id", "series", "target", "status", "updated_at"]
+
+
+@admin.register(LineReview)
+class LineReviewAdmin(admin.ModelAdmin):
+    list_display = ["id", "episode", "scene_id", "index", "verdict", "updated_at"]
+    list_filter = ["verdict", "episode__series"]
