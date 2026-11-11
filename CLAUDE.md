@@ -1,6 +1,7 @@
 # test_api — 백엔드 (Django + DRF)
 
-> 프로젝트 전체 구성, 결정 사항, 저장소 구조, **API 스펙은 `../PLAN.md`가 기준**이다.
+> 프로젝트 전체 구성, 결정 사항, 저장소 구조는 **`../PLAN.md`가 기준**이다.
+> **ui → api 확정 스펙은 구글 스펙 시트가 기준** (링크는 PLAN.md 5장). 시트에 없는 호출은 PLAN.md 5장 초안을 참고한다.
 > 작업 전에 반드시 읽고, 스펙과 다르게 구현해야 하면 먼저 사용자에게 확인한다. 스펙을 이 파일에 복사하지 않는다.
 
 ## 이 레포의 역할
@@ -8,7 +9,12 @@
 분석은 main에 위임하고 callback으로 결과를 받는다 (main 연동 스펙은 초안, PLAN.md 5장 11절). 예측·아이디어는 api가 LLM으로 직접 한다.
 
 ## 현재 상태
-작업 순서 1·2 완료. `config/`(settings), `vod/` 앱 (모델 없음, `GET /health`, `storage.py`, `init_storage` 명령).
+작업 순서 1·2 완료, 3·4는 스펙 시트의 5개 호출만 구현.
+- `vod/models.py`: Series, Episode, Character, Prediction (SpeakerMap·FaceMap·Idea는 분석 스펙 확정 후)
+- `vod/views.py` + `config/urls.py`: `/series`, `/series/{id}`, `/series/{id}/predict`(GET·POST), `/episodes/{id}`, `/health`
+- 에러는 `vod/exceptions.py`에서 `{"error": "메시지"}`로 통일. 예측은 `vod/predict.py` (`PREDICT_BACKEND=mock`: 즉시 가짜 결과)
+- 데이터: `manage.py seed_demo [--reset]` (데모 작품). TMDB `crawl` 명령은 아직 없음
+- 테스트: 레포 최상위 `tests/`에 모아 둔다 (스펙 시트 탭별 `test_series.py`, `test_episodes.py`, 공통 `base.py`). 실행 `docker compose exec api python manage.py test`
 환경변수는 `.env.example` 참고 (`DJANGO_*`, `DATABASE_URL`, `S3_*`, `MAIN_URL`, `API_URL`). `DATABASE_URL`이 없으면 sqlite.
 - MinIO 이미지: 공식 `minio/minio`는 배포 중단 → `chainguard/minio`를 digest로 고정. `mc`가 없어 버킷은 `init_storage`(boto3)로 만든다
 - 컴퓨터마다 `.env`만 다르게 둔다. `COMPOSE_PROFILES=minio`면 MinIO를 이 컴퓨터에서 띄우고, 비우면 `S3_*`가 가리키는 외부 저장소 사용 (PLAN.md 3장)
@@ -37,6 +43,6 @@ docker compose down -v                 # 데이터(볼륨)까지 삭제
 
 ## 규칙 요약 (상세는 PLAN.md)
 - GET/POST만. 회차 동작은 `/episodes/{id}/analyze`처럼 POST 시작 + 같은 경로 GET 조회
-- 시간은 초 단위 float, 장면 참조는 `{segment_id, start, end}`
+- 시간은 초 단위 float, 장면 참조는 `{episode_id, scene_id, start, end}`
 - 비밀값·주소는 환경변수, 각 서비스 `GET /health`
 - 패키지는 `requirements.txt`에 `==` 고정 후 이미지 재빌드 (로컬 가상환경 안 씀)
