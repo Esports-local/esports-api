@@ -9,6 +9,7 @@
 분석은 main에 위임하고 callback으로 결과를 받는다 (main 연동 스펙은 초안, PLAN.md 5장 11절). 예측·아이디어는 api가 LLM으로 직접 한다.
 
 ## 현재 상태
+남은 작업은 `docs/CHECKLIST.md`에서 관리한다.
 작업 순서 1·2 완료, 3·4는 스펙 시트의 5개 호출만 구현.
 - `vod/models.py`: Series, Episode, Character, Prediction (SpeakerMap·FaceMap·Idea는 분석 스펙 확정 후)
 - `vod/views.py` + `config/urls.py`: `/series`, `/series/{id}`, `/series/{id}/predict`(GET·POST), `/episodes/{id}`, `/health`
@@ -46,3 +47,5 @@ docker compose down -v                 # 데이터(볼륨)까지 삭제
 - 시간은 초 단위 float, 장면 참조는 `{episode_id, scene_id, start, end}`
 - 비밀값·주소는 환경변수, 각 서비스 `GET /health`
 - 패키지는 `requirements.txt`에 `==` 고정 후 이미지 재빌드 (로컬 가상환경 안 씀)
+- 문서(md)는 `docs/`에 모은다. `CLAUDE.md`만 최상위 (Claude Code가 최상위에서 읽음)
+- 테스트는 최상위 `tests/`에 모은다
