@@ -79,7 +79,17 @@ class EpisodeDetailSerializer(serializers.ModelSerializer):
 # ---------------------------------------------------------------- 예측
 
 class PredictRequestSerializer(serializers.Serializer):
-    target = serializers.IntegerField(min_value=2, help_text="예측할 회차 번호. 11이면 1~10화를 사용")
+    """POST 본문과 GET 쿼리에 같이 쓴다 (검증 규칙을 한 곳에)."""
+
+    target = serializers.IntegerField(
+        min_value=2, help_text="예측할 회차 번호 (2 이상). 11이면 1~10화를 사용",
+        error_messages={
+            "required": "target 이 필요합니다",
+            "null": "target 이 필요합니다",
+            "invalid": "target 은 정수여야 합니다",
+            "min_value": "target 은 2 이상이어야 합니다",
+        },
+    )
 
 
 class PredictAcceptedSerializer(serializers.Serializer):

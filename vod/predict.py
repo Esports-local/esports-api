@@ -8,14 +8,21 @@ from django.conf import settings
 
 from vod.models import Episode, JobStatus, Prediction
 
+BACKENDS = ("mock",)
+
 
 def run(prediction: Prediction) -> None:
-    """예측을 실행해 prediction 을 갱신한다."""
+    """예측을 실행해 prediction 을 갱신한다. 모르는 백엔드면 failed 로 남긴다."""
     backend = settings.PREDICT_BACKEND
     if backend == "mock":
         _run_mock(prediction)
-    else:  # LLM 백엔드는 아직 없음 → queued 로 남긴다
         return
+    _fail(prediction, f"지원하지 않는 PREDICT_BACKEND: {backend!r} (가능: {', '.join(BACKENDS)})")
+
+
+def _fail(p: Prediction, message: str) -> None:
+    p.status, p.error, p.items = JobStatus.FAILED, message, []
+    p.save(update_fields=["status", "error", "items", "updated_at"])
 
 
 def _first_scene(ep: Episode) -> dict | None:
@@ -30,7 +37,7 @@ def _run_mock(p: Prediction) -> None:
     evidence = []
     for ep in episodes[-2:]:
         s = _first_scene(ep)
-        if s:
+        if s:  # main 은 start_sec/end_sec, api 응답은 start/end
             evidence.append({
                 "episode_id": ep.id, "scene_id": s.get("id", 1),
                 "start": s.get("start_sec", 0.0), "end": s.get("end_sec", 0.0),

@@ -48,3 +48,33 @@ class PredictTests(DemoDataTestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("target", r.json()["error"])
         self.assertEqual(self.client.get(self.url()).json(), {"error": "target 이 필요합니다"})
+
+
+class PredictValidationTests(DemoDataTestCase):
+    """GET 쿼리와 POST 본문이 같은 규칙으로 검증되는지."""
+
+    def url(self):
+        return f"/series/{self.series.id}/predict"
+
+    def test_get_rejects_invalid_target(self):
+        for target, message in [("-5", "target 은 2 이상이어야 합니다"),
+                                ("1", "target 은 2 이상이어야 합니다"),
+                                ("abc", "target 은 정수여야 합니다")]:
+            r = self.client.get(self.url(), {"target": target})
+            self.assertEqual(r.status_code, 400, target)
+            self.assertEqual(r.json(), {"error": message})
+
+    def test_post_and_get_same_messages(self):
+        post = self.client.post(self.url(), {}, content_type="application/json").json()
+        get = self.client.get(self.url()).json()
+        self.assertEqual(post, get)
+        self.assertEqual(get, {"error": "target 이 필요합니다"})
+
+    def test_unknown_backend_fails_instead_of_queued_forever(self):
+        with self.settings(PREDICT_BACKEND="Mock"):  # 오타
+            r = self.client.post(self.url(), {"target": 11}, content_type="application/json")
+        self.assertEqual(r.status_code, 202)
+        body = self.client.get(self.url(), {"target": 11}).json()
+        self.assertEqual(body["status"], "failed")
+        self.assertIn("PREDICT_BACKEND", body["error"])
+        self.assertEqual(body["items"], [])

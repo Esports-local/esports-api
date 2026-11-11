@@ -22,11 +22,16 @@ from vod.serializers import (
 )
 
 
-def _get_series(pk: int) -> Series:
-    try:
-        return Series.objects.get(pk=pk)
-    except Series.DoesNotExist:
-        raise Http404("작품을 찾을 수 없습니다")
+SERIES_NOT_FOUND = "작품을 찾을 수 없습니다"
+EPISODE_NOT_FOUND = "회차를 찾을 수 없습니다"
+
+
+def _get_or_404(queryset, pk: int, message: str):
+    """pk 로 하나를 찾고, 없으면 {"error": message} 404."""
+    obj = queryset.filter(pk=pk).first()
+    if obj is None:
+        raise Http404(message)
+    return obj
 
 
 # ---------------------------------------------------------------- 상태
@@ -64,9 +69,7 @@ def series_list(request):
                responses={200: SeriesDetailSerializer, 404: ErrorSerializer})
 @api_view(["GET"])
 def series_detail(request, pk: int):
-    series = Series.objects.prefetch_related("episodes", "characters").filter(pk=pk).first()
-    if series is None:
-        raise Http404("작품을 찾을 수 없습니다")
+    series = _get_or_404(Series.objects.prefetch_related("episodes", "characters"), pk, SERIES_NOT_FOUND)
     return Response(SeriesDetailSerializer(series).data)
 
 
@@ -74,21 +77,17 @@ def series_detail(request, pk: int):
                request=PredictRequestSerializer,
                responses={202: PredictAcceptedSerializer, 400: ErrorSerializer, 404: ErrorSerializer})
 @extend_schema(methods=["GET"], tags=["series"], summary="4. 예측 상태 + 결과",
-               parameters=[OpenApiParameter("target", int, required=True, description="예측한 회차 번호")],
+               parameters=[OpenApiParameter("target", int, required=True, description="예측한 회차 번호 (2 이상)")],
                responses={200: PredictionSerializer, 400: ErrorSerializer, 404: ErrorSerializer})
 @api_view(["GET", "POST"])
 def series_predict(request, pk: int):
-    series = _get_series(pk)
+    series = _get_or_404(Series.objects, pk, SERIES_NOT_FOUND)
     if request.method == "POST":
         return _start_predict(series, request.data)
 
-    raw = request.query_params.get("target")
-    if not raw:
-        raise ApiError("target 이 필요합니다")
-    try:
-        target = int(raw)
-    except ValueError:
-        raise ApiError("target 은 정수여야 합니다")
+    query = PredictRequestSerializer(data=request.query_params)  # POST 와 같은 검증
+    query.is_valid(raise_exception=True)
+    target = query.validated_data["target"]
     p = Prediction.objects.filter(series=series, target=target).first()
     if p is None:
         return Response({"series_id": series.id, "target": target, "used_episodes": [],
@@ -124,8 +123,5 @@ def _start_predict(series: Series, data) -> Response:
                responses={200: EpisodeDetailSerializer, 404: ErrorSerializer})
 @api_view(["GET"])
 def episode_detail(request, pk: int):
-    try:
-        ep = Episode.objects.get(pk=pk)
-    except Episode.DoesNotExist:
-        raise Http404("회차를 찾을 수 없습니다")
+    ep = _get_or_404(Episode.objects, pk, EPISODE_NOT_FOUND)
     return Response(EpisodeDetailSerializer(ep).data)
