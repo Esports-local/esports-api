@@ -43,7 +43,7 @@ def _get_or_404(queryset, pk: int, message: str):
 
 # ---------------------------------------------------------------- 상태
 
-@extend_schema(tags=["health"], responses={200: inline_serializer("Health", {
+@extend_schema(tags=["health"], summary="서비스 상태 (db·storage)", responses={200: inline_serializer("Health", {
     "status": s.CharField(), "db": s.CharField(), "storage": s.CharField()})})
 @api_view(["GET"])
 def health(request):

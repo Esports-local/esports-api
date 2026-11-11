@@ -146,6 +146,7 @@ SPECTACULAR_SETTINGS = {
     'DESCRIPTION': 'ui → api 스펙 (../PLAN.md 5장)',
     'VERSION': '0.1.0',
     'ENUM_NAME_OVERRIDES': {'JobStatusEnum': 'vod.models.JobStatus'},
+    'SERVE_INCLUDE_SCHEMA': False,  # /api/schema/ 자체는 문서에서 뺀다
 }
 
 
