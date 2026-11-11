@@ -1,4 +1,4 @@
-# test_api — 백엔드 (Django + DRF)
+# storycast-api — 백엔드 (Django + DRF)
 
 > 프로젝트 전체 구성, 결정 사항, 저장소 구조는 **`../PLAN.md`가 기준**이다.
 > **ui → api 확정 스펙은 구글 스펙 시트가 기준** (링크는 PLAN.md 5장). 시트에 없는 호출은 PLAN.md 5장 초안을 참고한다.
@@ -32,7 +32,7 @@ docker compose down -v                 # 데이터(볼륨)까지 삭제
 1. `docker-compose.yml`: api + Postgres + MinIO (볼륨으로 데이터 유지), `.env.example`
 2. settings: DRF, drf-spectacular, `DATABASE_URL`, `S3_*`, `MAIN_URL` 환경변수
 3. 모델: Series, Episode, Character, SpeakerMap(회차별 S1→Character), FaceMap(회차별 F1→Character), Prediction, Idea
-   - 용어·필드는 main(`../test_main/pipeline/schema.py`)에 맞춤: scene / line / `start_sec`·`end_sec`
+   - 용어·필드는 main(`../storycast-analyzer/pipeline/schema.py`)에 맞춤: scene / line / `start_sec`·`end_sec`
    - 분석 상태는 Episode에 (`analyze_status`), 예측·아이디어는 (Series, `target`) 단위로 저장
    - main `episode.json`(scenes·speakers·faces)은 Episode에 `JSONField` + `schema_version`으로 통째로 저장
    - 예측·아이디어는 main이 아니라 api가 LLM으로 직접 수행
