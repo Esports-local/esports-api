@@ -19,9 +19,10 @@ services:
       minio:
         condition: service_started
         required: false  # COMPOSE_PROFILES 에 minio 가 없으면 띄우지 않음
+    # 저장소 준비(init_storage)가 실패해도 서버는 띄운다. 상태는 GET /health 가 503 으로 알려 준다
     command: >
       sh -c "python manage.py migrate &&
-             python manage.py init_storage &&
+             { python manage.py init_storage || echo '[warn] 저장소 준비 실패. GET /health 확인'; } &&
              python manage.py runserver 0.0.0.0:8000"
 
   db:

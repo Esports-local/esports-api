@@ -73,7 +73,7 @@ class EpisodeDetailSerializer(serializers.ModelSerializer):
         return _blank_to_none(obj.still)
 
     def get_play_url(self, obj) -> str | None:
-        return storage.presigned_url(obj.hls_key)
+        return storage.public_url(obj.hls_key)  # hls/ 는 공개 읽기 (storage.py 참고)
 
 
 # ---------------------------------------------------------------- 예측
