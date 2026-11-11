@@ -10,9 +10,9 @@
 
 ## 현재 상태
 남은 작업은 `docs/CHECKLIST.md`에서 관리한다.
-작업 순서 1·2 완료, 3·4는 스펙 시트의 5개 호출만 구현.
-- `vod/models.py`: Series, Episode, Character, Prediction (SpeakerMap·FaceMap·Idea는 분석 스펙 확정 후)
-- `vod/views.py` + `config/urls.py`: `/series`, `/series/{id}`, `/series/{id}/predict`(GET·POST), `/episodes/{id}`, `/health`
+작업 순서 1·2 완료, 3·4는 스펙 시트의 8개 호출만 구현.
+- `vod/models.py`: Series, Episode, Character, Prediction, LineReview(대사 검수) (SpeakerMap·FaceMap·Idea는 분석 스펙 확정 후)
+- `vod/views.py` + `config/urls.py`: `/series`, `/series/{id}`, `/series/{id}/predict`(GET·POST), `/episodes/{id}`, `/episodes/{id}/analysis`(main 원본, `start_sec`), `/episodes/{id}/reviews`(GET·POST), `/health`
 - 에러는 `vod/exceptions.py`에서 `{"error": "메시지"}`로 통일. 예측은 `vod/predict.py` (`PREDICT_BACKEND=mock`: 즉시 가짜 결과)
 - 데이터: `manage.py seed_demo [--reset]` (데모 작품). TMDB `crawl` 명령은 아직 없음
 - 테스트: 레포 최상위 `tests/`에 모아 둔다 (스펙 시트 탭별 `test_series.py`, `test_episodes.py`, 공통 `base.py`). 실행 `docker compose exec api python manage.py test`

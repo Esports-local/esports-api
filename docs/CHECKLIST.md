@@ -7,11 +7,12 @@
 - [x] 환경변수: `DATABASE_URL`, `S3_*`, `MAIN_URL`, `API_URL`, `TMDB_*`, `PREDICT_BACKEND`, `VIDEOS_DIR` (`.env.example`)
 - [x] MinIO: `vod` 버킷, `hls/` 공개 읽기 정책 (`init_storage`), boto3 타임아웃, 실패해도 서버 기동
 - [x] 모델: Series, Episode, Character, Prediction
-- [x] 엔드포인트 5개: `GET /series`, `GET /series/{id}`, `POST·GET /series/{id}/predict`, `GET /episodes/{id}` + `GET /health`
+- [x] 엔드포인트 8개: `GET /series`, `GET /series/{id}`, `POST·GET /series/{id}/predict`, `GET /episodes/{id}`, `GET /episodes/{id}/analysis`, `GET·POST /episodes/{id}/reviews` + `GET /health`
+- [x] 대사 검수(ui 회차 검수 화면용): LineReview 모델, 판정 ok·wrong·fixed·clear
 - [x] 에러 응답 `{"error": "메시지"}` 통일, 한국어 메시지
 - [x] 예측 mock (`PREDICT_BACKEND=mock`), 모르는 백엔드는 failed
 - [x] Swagger `/api/docs/`, 스키마 검증 통과
-- [x] 테스트 13개 (`tests/`, 스펙 시트 탭별)
+- [x] 테스트 22개 (`tests/`, 스펙 시트 탭별)
 - [x] `seed_demo` 데모 작품 (12화, 1~10화 분석 완료)
 - [x] 데모 1화에 test_main `tts_drama` HLS 연결 → 실제 재생 확인 (master → index → ts, CORS)
 - [x] 코드리뷰 1~9번 수정
@@ -20,16 +21,22 @@
 ## 실영상이 오면
 - [ ] `manage.py add_videos --series <id> /videos/*.mp4`: 파일명에서 회차 번호 → MinIO `raw/` 업로드 → 회차 연결 (이미 있으면 건너뜀)
 - [ ] `manage.py import_analysis --episode <id> <main outputs 폴더>`: `hls/`, `analysis/episode.json` → MinIO, Episode에 `hls_key`·`duration`·`analysis`·`analyze_status=done`
+  - 다시 분석한 회차면 그 회차의 대사 검수(LineReview)를 지운다 (대사 순서가 바뀌므로)
 - [ ] 실제 영상 한 편으로 영상 → main(CLI) → import → 재생·예측 근거까지 한 바퀴 확인
 - [ ] 디스크 용량 확인 (1시간 회차당 원본 1~3GB + HLS 1~2GB). 원본은 구글 드라이브에 두고 `raw/` 정리 여부 결정
 
 ## 스펙 추가 (시트에 먼저 적고 확인받은 뒤 구현)
 - [ ] 분석: `POST·GET /episodes/{id}/analyze` (시작, 진행 상태)
-- [ ] 장면: `GET /episodes/{id}/scenes` (저장된 `analysis`에서 장면·대사·얼굴, 시간은 `start`/`end`)
+- [ ] 장면: `GET /episodes/{id}/scenes` — 지금은 6번 `analysis` 원본으로 충분. 인물 id를 붙인 가공 응답이 필요해지면 추가
 - [ ] 화자 매핑: `GET·POST /episodes/{id}/speakers` + SpeakerMap 모델
 - [ ] 얼굴 매핑: `GET·POST /episodes/{id}/faces` + FaceMap 모델
 - [ ] 아이디어: `POST·GET /series/{id}/ideas` + Idea 모델
 - [ ] 회차 문서: `GET /episodes/{id}/document` (LLM 입력 header + body, 디버그용)
+
+## 검수
+- [ ] ui `web/api_client.py`의 `get_analysis`, `get_line_reviews`, `save_line_review`를 6~8번 호출로 교체 (test_ui)
+- [ ] 검수 결과 활용: 고친 대사(fixed)를 예측 입력(회차 문서)에 반영할지 결정
+- [ ] 장면 단위 검수(지문·유형·장면 경계)가 필요한지 결정
 
 ## 데이터 수집
 - [ ] 작품 정보 넣는 방법 결정: 관리자 화면 직접 입력 / JSON fixture / TMDB `crawl`
