@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from matches.models import GamePlayer, Match, MatchGame, Team
+from matches.models import GamePlayer, LineReview, Match, MatchGame, Team
 
 
 class MatchGameInline(admin.TabularInline):
@@ -26,3 +26,4 @@ class MatchGameAdmin(admin.ModelAdmin):
 
 
 admin.site.register(Team)
+admin.site.register(LineReview)

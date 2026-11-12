@@ -41,6 +41,7 @@ def cancel_job(job_id: str) -> dict:
     return _call("POST", f"/jobs/{job_id}/cancel")
 
 
-def estimate(video: str, conditions: list[str]) -> dict:
-    """POST /estimate — {model, lines, requests, input_tokens: {조건: 토큰}}"""
-    return _call("POST", "/estimate", json={"video": video, "conditions": conditions}, timeout=600)
+def estimate(video: str, conditions: list[str], text_overrides: dict[str, str] | None = None) -> dict:
+    """POST /estimate — {model, lines, requests, input_tokens: {조건: 토큰}}. text_overrides: 사람이 고친 대사"""
+    return _call("POST", "/estimate", json={"video": video, "conditions": conditions,
+                                            "text_overrides": text_overrides or {}}, timeout=600)

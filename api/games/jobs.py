@@ -3,7 +3,7 @@
 import time
 
 from api.exceptions import ApiError
-from api.games import analyzer
+from api.games import analyzer, reviews
 from matches.models import AnalyzeStatus, GameVideo
 from matches.outputs import save_video, work_dir
 
@@ -38,6 +38,11 @@ def start(v: GameVideo, stages: list[str], params: dict | None = None) -> GameVi
     source = next((s for s in analyzer.list_videos() if s["name"] == name), None)
     if source is None or not source["selectable"]:
         raise ApiError(f"분석할 수 없는 영상입니다: {(source or {}).get('reason') or name}")
+    if "translate" in stages:  # 사람이 고친 대사는 ASR 원문 대신 고친 문장으로 번역한다
+        overrides = reviews.text_overrides(v)
+        if overrides:
+            params = {**(params or {})}
+            params["translate"] = {**params.get("translate", {}), "text_overrides": overrides}
     job_id = f"game{v.id}-{int(time.time())}"
     analyzer.start_job(job_id, name, stages, params)
     v.job_id, v.error, v.analyze_status = job_id, "", AnalyzeStatus.RUNNING

@@ -129,3 +129,26 @@ class GameVideo(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class LineReview(models.Model):
+    """해설 대사 하나의 사람 검수. analyzer 결과(GameVideo.results)와 따로 두어 분석을 다시 돌려도 남는다.
+
+    - text: 사람이 고친 문장. 비어 있으면 ASR 원문 그대로 (안 고침). 번역할 때 ASR 원문 대신 쓴다
+    - reviewed: 검수했는지 (화면의 O / X)
+    - asr_text: 검수할 때의 ASR 원문. 지금 ASR 원문과 다르면 (asr 를 다시 돌림) 이 검수는 쓰지 않는다
+    """
+
+    video = models.ForeignKey(GameVideo, on_delete=models.CASCADE, related_name="reviews")
+    line_id = models.PositiveIntegerField()  # asr 대사 id
+    asr_text = models.TextField()
+    text = models.TextField(blank=True)
+    reviewed = models.BooleanField(default=False)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["video", "line_id"]
+        constraints = [models.UniqueConstraint(fields=["video", "line_id"], name="unique_line_review")]
+
+    def __str__(self):
+        return f"{self.video_id}#{self.line_id}"

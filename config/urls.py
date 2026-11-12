@@ -13,6 +13,7 @@ urlpatterns = [
     path("games/<int:pk>", games.game_detail),
     path("games/<int:pk>/screen", games.game_screen),
     path("games/<int:pk>/lines", games.game_lines),
+    path("games/<int:pk>/lines/<int:line_id>/review", games.game_line_review),
     path("games/<int:pk>/analysis", games.game_analysis),
     path("games/<int:pk>/analyze", games.game_analyze),
     path("games/<int:pk>/cancel", games.game_cancel),

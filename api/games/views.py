@@ -1,4 +1,4 @@
-"""/games·/sources 엔드포인트 (스펙 시트 spec_sheet_lol 1~5번, 8~12번)."""
+"""/games·/sources 엔드포인트 (스펙 시트 spec_sheet_lol 1~5번, 8~13번)."""
 
 from django.db import transaction
 from django.http import Http404
@@ -7,10 +7,10 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from api.exceptions import ApiError, get_or_404
-from api.games import analyzer, jobs
+from api.games import analyzer, jobs, reviews
 from matches import opgg
 from matches.management.commands.import_match import save_match
-from matches.models import GameVideo, Match, MatchGame, Role
+from matches.models import GameVideo, LineReview, Match, MatchGame, Role
 from matches.screen import filter_runs, snapshot, static_values
 
 GAME_NOT_FOUND = "영상을 찾을 수 없습니다"
@@ -191,7 +191,7 @@ def game_estimate(request, pk: int):
     conds = [c for c in request.query_params.get("conditions", "A,B").split(",") if c]
     if not conds or set(conds) - {"A", "B", "C"}:
         raise ApiError("conditions 는 A, B, C 중에서 고릅니다")
-    return Response(analyzer.estimate(jobs.source_for(v), conds))
+    return Response(analyzer.estimate(jobs.source_for(v), conds, reviews.text_overrides(v)))
 
 
 @extend_schema(tags=["games"], summary="12. 고를 수 있는 원본 영상 목록")
@@ -238,6 +238,7 @@ def game_lines(request, pk: int):
     statics = static_values(runs)
     translations = ((v.results.get("translate") or {}).get("result") or {}).get("lines", {})
     lo, hi = _float_param(request, "from_sec"), _float_param(request, "to_sec")
+    checked = reviews.current(v, lines)
     out = []
     for line in lines:
         if (lo is not None and line["start_sec"] < lo) or (hi is not None and line["start_sec"] > hi):
@@ -246,8 +247,36 @@ def game_lines(request, pk: int):
         out.append({"id": line["id"], "start_sec": line["start_sec"], "end_sec": line["end_sec"],
                     "language": line.get("language"), "text": line["text"],
                     "screen": snapshot(runs, mid, statics) if runs else {},
-                    "translations": translations.get(str(line["id"]))})
+                    "translations": translations.get(str(line["id"])),
+                    "review": reviews.as_json(checked.get(line["id"]))})
     return Response(out)
+
+
+@extend_schema(tags=["games"], summary="13. 대사 검수 저장 (고친 문장, 검수 O/X)")
+@api_view(["POST"])
+def game_line_review(request, pk: int, line_id: int):
+    v = _video(pk)
+    line = next((x for x in _stage(v, "asr", "대사 분석 결과가 없습니다")["lines"] if x["id"] == line_id), None)
+    if line is None:
+        raise Http404("대사를 찾을 수 없습니다")
+    text, reviewed = request.data.get("text"), request.data.get("reviewed")
+    if text is None and reviewed is None:
+        raise ApiError("text 나 reviewed 중 하나는 보내야 합니다")
+    if text is not None and (not isinstance(text, str) or not text.strip()):
+        raise ApiError("text 는 비어 있지 않은 문자열이어야 합니다")
+    if reviewed is not None and not isinstance(reviewed, bool):
+        raise ApiError("reviewed 는 true 또는 false 입니다")
+    r = reviews.current(v, [line]).get(line_id)
+    if r is None:  # 처음 검수하거나 asr 를 다시 돌려 원문이 바뀜 → 새로 시작
+        r = LineReview.objects.filter(video=v, line_id=line_id).first() or LineReview(video=v, line_id=line_id)
+        r.asr_text, r.text, r.reviewed = line["text"], "", False
+    if text is not None:
+        text = text.strip()
+        r.text = "" if text == line["text"] else text  # 원문과 같으면 안 고친 것
+    if reviewed is not None:
+        r.reviewed = reviewed
+    r.save()
+    return Response({"id": line_id, "text": line["text"], "review": reviews.as_json(r)})
 
 
 @extend_schema(tags=["games"], summary="5. 단계 결과 원본")

@@ -11,10 +11,11 @@
 ## 구조
 - `api/`: ui 에 주는 엔드포인트. 엔드포인트마다 폴더 하나 (`views.py` + 그 엔드포인트만 쓰는 파일). 앱(`matches`)과 관리 명령은 `api`를 import 하지 않는다
   - 공통: `views.py`(`/health`), `exceptions.py`(에러 형식 `{"error": "메시지"}`, `get_or_404`)
-  - `games/` (LoL, `/games`, `/sources`): `views.py` 스펙 1~5번 조회, 8~12번 `POST /games`(영상 등록 + 분석), `/analyze`, `/cancel`, `/estimate`, `GET /sources`. 6·7번 `/cases`는 evaluate 단계 후
+  - `games/` (LoL, `/games`, `/sources`): `views.py` 스펙 1~5번 조회, 8~12번 `POST /games`(영상 등록 + 분석), `/analyze`, `/cancel`, `/estimate`, `GET /sources`, 13번 `POST /games/{id}/lines/{line_id}/review`(대사 검수). 6·7번 `/cases`는 evaluate 단계 후
     - `analyzer.py`: analyzer HTTP 호출 (`MAIN_URL`, 스펙은 `../esports-analyzer/api/*/schemas.py`). `jobs.py`: 작업 시작, 조회할 때 상태 갱신, 끝나면 `matches/outputs.py`로 결과 저장
+    - `reviews.py`: 대사 검수(LineReview)를 `/lines`에 붙이고, 번역·예상 때 고친 문장을 analyzer `translate.text_overrides`로 넘긴다
 - `matches/` (LoL 앱: 모델·관리 명령)
-  - `models.py`: Team, Match(경기, op.gg 번호), MatchGame(세트), GamePlayer(세트별 진영·포지션·선수·챔피언), GameVideo(세트 영상 = 스펙의 games, analyzer 결과 JSON 통째로)
+  - `models.py`: Team, Match(경기, op.gg 번호), MatchGame(세트), GamePlayer(세트별 진영·포지션·선수·챔피언), GameVideo(세트 영상 = 스펙의 games, analyzer 결과 JSON 통째로), LineReview(대사 검수: 고친 문장·O/X. 결과와 따로 둬서 재분석해도 남음, 검수 때 ASR 원문과 지금 원문이 다르면 안 씀)
   - `opgg.py`: op.gg 경기 페이지 안 JSON(`__NEXT_DATA__`)만 읽는다. op.gg 내부 API 는 쓰지 않는다. 세트별 진영·선수·챔피언은 페이지에 없다
   - `outputs.py`: analyzer 결과 폴더 → GameVideo 저장 (`jobs.py`와 `import_outputs`가 같이 씀). `screen.py`: roi_ocr 구간 → 대사 시점 화면 정보 (잡음 구간 제외, 안 바뀌는 값은 가장 오래 뜬 값)
   - 관리 명령: `init_storage`(MinIO 버킷 준비, compose 가 띄울 때 실행), `import_match <op.gg 번호|주소>`, `import_outputs <analyzer 결과 이름> --title --lang --match --set` (화면 OCR 팀·선수 이름으로 세트를 채움)

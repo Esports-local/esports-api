@@ -92,7 +92,7 @@ class GameJobTest(TestCase):
         with mock.patch("api.games.analyzer.estimate", return_value={"model": "m", "lines": 1, "requests": 2,
                                                                    "input_tokens": {"A": 10, "B": 20}}) as est:
             d = self.client.get(f"/games/{v.id}/estimate?conditions=A,B").json()
-        est.assert_called_once_with("game_1080.mp4", ["A", "B"])
+        est.assert_called_once_with("game_1080.mp4", ["A", "B"], {})
         self.assertEqual(d["input_tokens"]["B"], 20)
 
     def test_source_for_missing(self):
