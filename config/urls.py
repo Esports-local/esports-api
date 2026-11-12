@@ -2,20 +2,22 @@ from django.contrib import admin
 from django.urls import path
 from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
-from matches import views as games
-from vod import views
+from api import views as common
+from api.episodes import views as episodes
+from api.games import views as games
+from api.series import views as series
 
 urlpatterns = [
     path("admin/", admin.site.urls),
-    path("health", views.health),
-    # series
-    path("series", views.series_list),
-    path("series/<int:pk>", views.series_detail),
-    path("series/<int:pk>/predict", views.series_predict),
-    # episodes
-    path("episodes/<int:pk>", views.episode_detail),
-    path("episodes/<int:pk>/analysis", views.episode_analysis),
-    path("episodes/<int:pk>/reviews", views.episode_reviews),
+    path("health", common.health),
+    # series (드라마 작품 + 예측)
+    path("series", series.series_list),
+    path("series/<int:pk>", series.series_detail),
+    path("series/<int:pk>/predict", series.series_predict),
+    # episodes (드라마 회차 + 대사 검수)
+    path("episodes/<int:pk>", episodes.episode_detail),
+    path("episodes/<int:pk>/analysis", episodes.episode_analysis),
+    path("episodes/<int:pk>/reviews", episodes.episode_reviews),
     # games (LoL 세트 영상)
     path("games", games.game_list),
     path("games/<int:pk>", games.game_detail),

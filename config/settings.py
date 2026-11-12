@@ -139,7 +139,7 @@ REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [],
     'DEFAULT_PERMISSION_CLASSES': [],
     'UNAUTHENTICATED_USER': None,
-    'EXCEPTION_HANDLER': 'vod.exceptions.handler',  # 에러는 {"error": "메시지"}
+    'EXCEPTION_HANDLER': 'api.exceptions.handler',  # 에러는 {"error": "메시지"}
 }
 
 SPECTACULAR_SETTINGS = {

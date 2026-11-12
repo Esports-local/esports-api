@@ -4,7 +4,7 @@ from botocore.exceptions import BotoCoreError, ClientError
 from django.conf import settings
 from django.core.management.base import BaseCommand, CommandError
 
-from vod import storage
+from config import storage
 
 
 class Command(BaseCommand):

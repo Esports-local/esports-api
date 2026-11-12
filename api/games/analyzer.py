@@ -3,7 +3,7 @@
 import requests
 from django.conf import settings
 
-from vod.exceptions import ApiError
+from api.exceptions import ApiError
 
 
 def _call(method: str, path: str, timeout: float = 30, **kwargs):

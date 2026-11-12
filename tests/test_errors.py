@@ -1,8 +1,8 @@
-"""에러 응답 형식 {"error": "메시지"} (vod/exceptions.py)."""
+"""에러 응답 형식 {"error": "메시지"} (api/exceptions.py)."""
 
 from django.test import SimpleTestCase
 
-from vod.exceptions import first_message
+from api.exceptions import first_message
 
 
 class FirstMessageTests(SimpleTestCase):

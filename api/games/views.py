@@ -1,4 +1,4 @@
-"""세트 영상 엔드포인트 (스펙 시트 spec_sheet_lol 1~5번)."""
+"""/games·/sources 엔드포인트 (스펙 시트 spec_sheet_lol 1~5번, 8~12번)."""
 
 from django.db import transaction
 from django.http import Http404
@@ -6,11 +6,12 @@ from drf_spectacular.utils import extend_schema
 from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
-from matches import analyzer, jobs, opgg
+from api.exceptions import ApiError, get_or_404
+from api.games import analyzer, jobs
+from matches import opgg
 from matches.management.commands.import_match import save_match
 from matches.models import GameVideo, Match, MatchGame, Role
 from matches.screen import filter_runs, snapshot, static_values
-from vod.exceptions import ApiError
 
 GAME_NOT_FOUND = "영상을 찾을 수 없습니다"
 STAGES = ["preprocess", "segments", "hls", "roi_ocr", "asr", "translate", "evaluate"]
@@ -19,10 +20,8 @@ ROLE_ORDER = [r.value for r in Role]
 
 
 def _video(pk: int) -> GameVideo:
-    v = GameVideo.objects.select_related("game__match", "game__blue_team", "game__red_team").filter(pk=pk).first()
-    if v is None:
-        raise Http404(GAME_NOT_FOUND)
-    return v
+    return get_or_404(GameVideo.objects.select_related("game__match", "game__blue_team", "game__red_team"),
+                      pk, GAME_NOT_FOUND)
 
 
 def _stage(v: GameVideo, stage: str, message: str) -> dict:

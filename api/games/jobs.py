@@ -2,10 +2,10 @@
 
 import time
 
-from matches import analyzer
+from api.exceptions import ApiError
+from api.games import analyzer
 from matches.models import AnalyzeStatus, GameVideo
 from matches.outputs import save_video, work_dir
-from vod.exceptions import ApiError
 
 DEFAULT_STAGES = ["preprocess", "roi_ocr", "asr"]
 

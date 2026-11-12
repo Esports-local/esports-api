@@ -7,9 +7,10 @@ from unittest import mock
 
 from django.test import TestCase
 
-from matches import jobs, outputs
+from api.exceptions import ApiError
+from api.games import jobs
+from matches import outputs
 from matches.models import GameVideo
-from vod.exceptions import ApiError
 
 SOURCES = [
     {"name": "game_1080.mp4", "size_bytes": 1, "duration_sec": 60.0, "width": 1920, "height": 1080,
@@ -25,10 +26,10 @@ class GameJobTest(TestCase):
         work = Path(self.tmp.name) / "game_1080" / "work"
         work.mkdir(parents=True)
         (work / "preprocess.json").write_text(json.dumps({"stage": "preprocess", "result": {"duration_sec": 60.0}}))
-        patches = [mock.patch("matches.analyzer.list_videos", return_value=SOURCES),
-                   mock.patch("matches.analyzer.start_job", return_value={"status": "running"}),
+        patches = [mock.patch("api.games.analyzer.list_videos", return_value=SOURCES),
+                   mock.patch("api.games.analyzer.start_job", return_value={"status": "running"}),
                    # 실제 analyzer 에 묻지 않게: 기본은 "진행 중"
-                   mock.patch("matches.analyzer.get_job", return_value={"status": "running", "current_stage": None,
+                   mock.patch("api.games.analyzer.get_job", return_value={"status": "running", "current_stage": None,
                                                                         "stages": [], "elapsed_sec": 0.0}),
                    mock.patch.object(outputs, "OUTPUTS_ROOT", Path(self.tmp.name))]
         self.mocks = [p.start() for p in patches]
@@ -56,24 +57,24 @@ class GameJobTest(TestCase):
         r = self.client.post(f"/games/{v.id}/analyze", {"stages": ["asr"]}, content_type="application/json")
         self.assertEqual(r.status_code, 409)
 
-        with mock.patch("matches.analyzer.get_job", return_value={"status": "running", "current_stage": "asr",
+        with mock.patch("api.games.analyzer.get_job", return_value={"status": "running", "current_stage": "asr",
                                                                   "stages": ["asr"], "elapsed_sec": 3.0}):
             d = self.client.get(f"/games/{v.id}").json()
         self.assertEqual((d["analyze_status"], d["progress"]["current_stage"]), ("running", "asr"))
 
-        with mock.patch("matches.analyzer.get_job", return_value={"status": "succeeded"}):
+        with mock.patch("api.games.analyzer.get_job", return_value={"status": "succeeded"}):
             d = self.client.get(f"/games/{v.id}").json()
         self.assertEqual((d["analyze_status"], d["duration_sec"], d["error"]), ("done", 60.0, None))
 
     def test_failed_and_analyzer_restart(self):
         v = GameVideo.objects.create(title="t", work_name="game_1080", video_name="game_1080.mp4",
                                      analyze_status="running", job_id="j1")
-        with mock.patch("matches.analyzer.get_job", return_value={"status": "failed", "error": "오디오 트랙이 없어"}):
+        with mock.patch("api.games.analyzer.get_job", return_value={"status": "failed", "error": "오디오 트랙이 없어"}):
             d = self.client.get(f"/games/{v.id}").json()
         self.assertEqual((d["analyze_status"], d["error"]), ("failed", "오디오 트랙이 없어"))
 
         GameVideo.objects.filter(pk=v.pk).update(analyze_status="running")
-        with mock.patch("matches.analyzer.get_job", side_effect=ApiError("작업을 찾을 수 없습니다", 404)):
+        with mock.patch("api.games.analyzer.get_job", side_effect=ApiError("작업을 찾을 수 없습니다", 404)):
             d = self.client.get(f"/games/{v.id}").json()
         self.assertEqual(d["analyze_status"], "failed")
         self.assertIn("다시 시작", d["error"])
@@ -88,7 +89,7 @@ class GameJobTest(TestCase):
         bad = self.client.post(f"/games/{v.id}/analyze", {"stages": ["translate"], "conditions": ["D"]},
                                content_type="application/json")
         self.assertEqual(bad.status_code, 400)
-        with mock.patch("matches.analyzer.estimate", return_value={"model": "m", "lines": 1, "requests": 2,
+        with mock.patch("api.games.analyzer.estimate", return_value={"model": "m", "lines": 1, "requests": 2,
                                                                    "input_tokens": {"A": 10, "B": 20}}) as est:
             d = self.client.get(f"/games/{v.id}/estimate?conditions=A,B").json()
         est.assert_called_once_with("game_1080.mp4", ["A", "B"])

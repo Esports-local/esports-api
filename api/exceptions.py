@@ -37,3 +37,11 @@ def handler(exc, context):
     if response is not None:
         response.data = {"error": first_message(response.data)}
     return response
+
+
+def get_or_404(queryset, pk: int, message: str):
+    """pk 로 하나를 찾고, 없으면 {"error": message} 404."""
+    obj = queryset.filter(pk=pk).first()
+    if obj is None:
+        raise Http404(message)
+    return obj
