@@ -165,7 +165,7 @@ S3_PRESIGN_EXPIRES = int(os.environ.get("S3_PRESIGN_EXPIRES", "3600"))
 # 다른 서비스
 
 MAIN_URL = os.environ.get("MAIN_URL", "http://localhost:8001")
-API_URL = os.environ.get("API_URL", "http://localhost:8000")
+API_URL = os.environ.get("API_URL", "http://localhost:8002")
 
 # 예측 백엔드. mock: 요청 즉시 가짜 결과 (LLM 연동 전 ui 개발용)
 PREDICT_BACKEND = os.environ.get("PREDICT_BACKEND", "mock")

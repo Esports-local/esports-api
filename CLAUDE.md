@@ -26,7 +26,7 @@
 
 ```
 cp .env.example .env
-docker compose up --build              # api :8000 (sqlite), analyzer :8001, MinIO :9000 (콘솔 :9001)
+docker compose up --build              # ui :8000, api :8002 (sqlite), analyzer :8001, MinIO :9000 (콘솔 :9001)
 docker compose exec api python manage.py import_match 32706
 docker compose exec api python manage.py import_outputs words_test_1080 --title "..." --lang ko --match 32706 --set 2
 ```

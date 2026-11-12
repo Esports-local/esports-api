@@ -1,4 +1,4 @@
-# 개발용 통합 실행: api (기본 sqlite) + analyzer + MinIO (+ Postgres)
+# 개발용 통합 실행: ui :8000 + api :8002 (기본 sqlite) + analyzer :8001 + MinIO (+ Postgres)
 #   cp .env.example .env      # 컴퓨터마다 .env 만 다르게 둔다
 #   docker compose up --build
 # MinIO 는 .env 의 COMPOSE_PROFILES 에 minio, Postgres 는 postgres 가 있을 때만 띄운다.
@@ -10,7 +10,7 @@ services:
     build: .
     env_file: .env
     ports:
-      - "8000:8000"
+      - "8002:8000"  # 호스트 8000 은 ui. 컨테이너끼리는 http://api:8000
     volumes:
       - .:/app  # 코드 수정 시 자동 reload
       - ${ANALYZER_OUTPUTS:-../esports-analyzer/outputs}:/outputs:ro  # import_outputs 가 읽는 analyzer 결과
@@ -26,6 +26,19 @@ services:
       sh -c "python manage.py migrate &&
              { python manage.py init_storage || echo '[warn] 저장소 준비 실패. GET /health 확인'; } &&
              python manage.py runserver 0.0.0.0:8000"
+
+  ui:
+    # 화면 (esports-ui). 브라우저는 http://localhost:8000
+    image: esports-ui
+    build: ../esports-ui
+    environment:
+      API_URL: http://api:8000
+    ports:
+      - "8000:8080"
+    volumes:
+      - ../esports-ui:/app  # 코드 수정 시 자동 reload
+    depends_on:
+      - api
 
   analyzer:
     # 분석 파이프라인 (esports-analyzer). 영상 목록 /videos, 분석 작업 /jobs, 번역 예상 /estimate
