@@ -14,6 +14,7 @@ services:
     volumes:
       - .:/app  # 코드 수정 시 자동 reload
       - ${VIDEOS_DIR:-./videos}:/videos:ro  # add_videos 가 읽는 원본 폴더 (구글 드라이브 폴더 등)
+      - ${ANALYZER_OUTPUTS:-../esports-analyzer/outputs}:/outputs:ro  # import_outputs 가 읽는 analyzer 결과
     depends_on:
       db:
         condition: service_healthy
