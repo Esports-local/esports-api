@@ -1,7 +1,7 @@
-# 개발용 통합 실행: api + Postgres (+ MinIO)
+# 개발용 통합 실행: api (기본 sqlite) + MinIO (+ Postgres)
 #   cp .env.example .env      # 컴퓨터마다 .env 만 다르게 둔다
 #   docker compose up --build
-# MinIO 는 .env 의 COMPOSE_PROFILES=minio 일 때만 이 컴퓨터에서 띄운다.
+# MinIO 는 .env 의 COMPOSE_PROFILES 에 minio, Postgres 는 postgres 가 있을 때만 띄운다.
 # 다른 곳의 저장소를 쓰려면 COMPOSE_PROFILES 를 비우고 S3_* 를 그 주소로 바꾼다.
 # 데이터는 named volume(pgdata, miniodata)에 유지된다. 지우려면 docker compose down -v
 name: esports  # 네트워크 esports_default, 볼륨 esports_* (폴더 이름과 무관)
@@ -18,6 +18,7 @@ services:
     depends_on:
       db:
         condition: service_healthy
+        required: false  # COMPOSE_PROFILES 에 postgres 가 없으면 띄우지 않음 (기본 sqlite)
       minio:
         condition: service_started
         required: false  # COMPOSE_PROFILES 에 minio 가 없으면 띄우지 않음
@@ -28,6 +29,7 @@ services:
              python manage.py runserver 0.0.0.0:8000"
 
   db:
+    profiles: ["postgres"]
     image: postgres:17
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-vod}
