@@ -2,8 +2,8 @@
 
 LoL 중계 번역 실험의 백엔드 (Django + DRF). 경기 정보(op.gg), 세트 영상, 분석 결과(ASR·화면 OCR·번역)를 저장하고 화면에 제공한다.
 
-- 계획·실험 조건: [esports-analyzer/docs/PLAN.md](https://github.com/djkim0704/esports-analyzer/blob/main/docs/PLAN.md)
-- 함께 쓰는 레포: [esports-analyzer](https://github.com/djkim0704/esports-analyzer) (분석) · [esports-ui](https://github.com/djkim0704/esports-ui) (화면)
+- 계획·실험 조건: [esports-analyzer/docs/PLAN.md](https://github.com/Esports-local/esports-analyzer/blob/main/docs/PLAN.md)
+- 함께 쓰는 레포: [esports-analyzer](https://github.com/Esports-local/esports-analyzer) (분석) · [esports-ui](https://github.com/Esports-local/esports-ui) (화면)
 
 ## 엔드포인트
 | No | 메서드 | 경로 | 설명 |
