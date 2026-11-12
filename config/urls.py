@@ -22,6 +22,10 @@ urlpatterns = [
     path("games/<int:pk>/screen", games.game_screen),
     path("games/<int:pk>/lines", games.game_lines),
     path("games/<int:pk>/analysis", games.game_analysis),
+    path("games/<int:pk>/analyze", games.game_analyze),
+    path("games/<int:pk>/cancel", games.game_cancel),
+    path("games/<int:pk>/estimate", games.game_estimate),
+    path("sources", games.source_list),
     # 문서
     path("api/schema/", SpectacularAPIView.as_view(), name="schema"),
     path("api/docs/", SpectacularSwaggerView.as_view(url_name="schema")),

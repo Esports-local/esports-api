@@ -1,4 +1,4 @@
-# 개발용 통합 실행: api (기본 sqlite) + MinIO (+ Postgres)
+# 개발용 통합 실행: api (기본 sqlite) + analyzer + MinIO (+ Postgres)
 #   cp .env.example .env      # 컴퓨터마다 .env 만 다르게 둔다
 #   docker compose up --build
 # MinIO 는 .env 의 COMPOSE_PROFILES 에 minio, Postgres 는 postgres 가 있을 때만 띄운다.
@@ -13,7 +13,6 @@ services:
       - "8000:8000"
     volumes:
       - .:/app  # 코드 수정 시 자동 reload
-      - ${VIDEOS_DIR:-./videos}:/videos:ro  # add_videos 가 읽는 원본 폴더 (구글 드라이브 폴더 등)
       - ${ANALYZER_OUTPUTS:-../esports-analyzer/outputs}:/outputs:ro  # import_outputs 가 읽는 analyzer 결과
     depends_on:
       db:
@@ -27,6 +26,22 @@ services:
       sh -c "python manage.py migrate &&
              { python manage.py init_storage || echo '[warn] 저장소 준비 실패. GET /health 확인'; } &&
              python manage.py runserver 0.0.0.0:8000"
+
+  analyzer:
+    # 분석 파이프라인 (esports-analyzer). 영상 목록 /videos, 분석 작업 /jobs, 번역 예상 /estimate
+    image: esports-analyzer
+    build: ../esports-analyzer
+    env_file:
+      - path: ../esports-analyzer/.env  # GEMINI_API_KEY (번역)
+        required: false
+    environment:
+      VIDEOS_ROOT: /data
+    ports:
+      - "8001:8001"
+    volumes:
+      - ../esports-analyzer:/app  # 결과는 ../esports-analyzer/outputs 에 쌓이고 api 가 /outputs 로 읽는다
+      - ${VIDEOS_DIR:-./videos}:/data:ro  # 분석할 원본 영상 폴더 (1920x1080 영상만 고를 수 있음)
+    command: uvicorn app.main:app --host 0.0.0.0 --port 8001
 
   db:
     profiles: ["postgres"]
