@@ -9,7 +9,7 @@
   서명을 붙일 수 없으므로, 재생 주소는 서명 없는 public_url 을 쓴다.
 - raw/(원본), analysis/(분석 결과) 는 비공개. 필요하면 presigned_url.
 
-DB에는 key 만 저장한다 (예: hls/12/master.m3u8, analysis/12/episode.json). 구조는 PLAN.md 3장.
+DB에는 key 만 저장한다 (예: hls/12/master.m3u8). 세트 영상 재생(hls)에 쓸 예정.
 """
 
 import json

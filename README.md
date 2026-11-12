@@ -44,10 +44,8 @@ docker compose exec api python manage.py test
 |---|---|
 | `api/` | 엔드포인트. 엔드포인트마다 폴더 하나 (`views.py` + 그 엔드포인트만 쓰는 파일) |
 | `api/games/` | `/games`, `/sources` (`analyzer.py` analyzer 호출, `jobs.py` 작업 시작·상태 갱신) |
-| `api/series/`, `api/episodes/` | 이전 주제(드라마) `/series`, `/episodes` |
-| `api/` 공통 | `views.py`(`/health`), `exceptions.py`(에러 형식), `serializers.py` |
+| `api/` 공통 | `views.py`(`/health`), `exceptions.py`(에러 형식) |
 | `matches/` | LoL 모델, `opgg.py`, `outputs.py`(analyzer 결과 저장), `screen.py`, 관리 명령 |
-| `vod/` | 드라마 모델, 관리 명령 |
 | `config/` | 설정, `urls.py`, `storage.py`(MinIO/S3) |
 
 ## 테이블 (`matches` 앱)
@@ -59,4 +57,4 @@ docker compose exec api python manage.py test
 | GamePlayer | 세트별 진영·포지션·선수·챔피언 |
 | GameVideo | 세트 영상 하나 (해설 언어별), analyzer 결과 JSON |
 
-`vod` 앱과 `api/series`·`api/episodes`(`/series`, `/episodes`)는 이전 주제(드라마 스토리 예측) 코드로, 정리 전까지 남아 있다.
+이전 주제(드라마 스토리 예측) 코드는 `drama` 브랜치에 있다.
