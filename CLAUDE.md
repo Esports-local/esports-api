@@ -12,7 +12,7 @@
 - `api/`: ui 에 주는 엔드포인트. 엔드포인트마다 폴더 하나 (`views.py` + 그 엔드포인트만 쓰는 파일). 앱(`matches`·`vod`)과 관리 명령은 `api`를 import 하지 않는다
   - 공통: `views.py`(`/health`), `exceptions.py`(에러 형식 `{"error": "메시지"}`, `get_or_404`), `serializers.py`(`ErrorSerializer`)
   - `games/` (LoL, `/games`, `/sources`): `views.py` 스펙 1~5번 조회, 8~12번 `POST /games`(영상 등록 + 분석), `/analyze`, `/cancel`, `/estimate`, `GET /sources`. 6·7번 `/cases`는 evaluate 단계 후
-    - `analyzer.py`: analyzer HTTP 호출 (`MAIN_URL`, 스펙은 `../esports-analyzer/app/schemas.py`). `jobs.py`: 작업 시작, 조회할 때 상태 갱신, 끝나면 `matches/outputs.py`로 결과 저장
+    - `analyzer.py`: analyzer HTTP 호출 (`MAIN_URL`, 스펙은 `../esports-analyzer/api/*/schemas.py`). `jobs.py`: 작업 시작, 조회할 때 상태 갱신, 끝나면 `matches/outputs.py`로 결과 저장
   - `series/` (드라마, `/series`): views·serializers·predict
   - `episodes/` (드라마, `/episodes`): views·serializers
 - `matches/` (LoL 앱: 모델·관리 명령)

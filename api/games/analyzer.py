@@ -1,4 +1,4 @@
-"""analyzer HTTP 호출 (settings.MAIN_URL). 연동 스펙은 esports-analyzer/app/schemas.py."""
+"""analyzer HTTP 호출 (settings.MAIN_URL). 연동 스펙은 esports-analyzer/api/*/schemas.py."""
 
 import requests
 from django.conf import settings
