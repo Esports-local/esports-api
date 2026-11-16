@@ -82,6 +82,10 @@ WSGI_APPLICATION = 'config.wsgi.application'
 DATABASES = {
     'default': dj_database_url.config(default=f"sqlite:///{BASE_DIR / 'db.sqlite3'}", conn_max_age=60),
 }
+if DATABASES['default']['ENGINE'].endswith('sqlite3'):
+    # 쓰기 요청이 겹치면(평가 기록 저장 + 진행 보고) 읽고 나서 쓰는 트랜잭션이 "database is locked" 로 바로 실패한다.
+    # 처음부터 쓰기 잠금을 잡고 timeout 동안 기다리게 한다
+    DATABASES['default'].setdefault('OPTIONS', {}).update(transaction_mode='IMMEDIATE', timeout=20)
 
 
 # Password validation
