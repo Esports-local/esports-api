@@ -1,0 +1,189 @@
+"""/skills 엔드포인트: 사용 기록, 선택 평가 결과, 평가 실행 요청."""
+
+from datetime import datetime, timezone as tz
+from unittest import mock
+
+from django.test import TestCase
+from django.utils import timezone
+
+from skills.models import SkillEvalCase, SkillEvalJob, SkillEvalRun, SkillUsage
+
+ADD = "esports-dev:add-endpoint"
+STAGE = "esports-dev:add-stage"
+
+
+def row(case_id, run, expect, got, verdict, skill=ADD, **extra):
+    return {"id": case_id, "run": run, "skill": skill, "kind": "should" if expect == skill else "should_not",
+            "split": "train", "repo": "esports-api", "prompt": f"{case_id} 요청", "expect": expect, "got": got,
+            "first_tool": "Skill" if got else "Bash", "verdict": verdict, "model": "sonnet",
+            "input_tokens": 30000, "sec": 3.5, "error": None, "at": "2026-11-17T10:00:00", **extra}
+
+
+ROWS = [
+    row("add-endpoint-s1", 1, ADD, ADD, "correct"),
+    row("add-endpoint-s1", 2, ADD, ADD, "correct"),
+    row("add-endpoint-s2", 1, ADD, None, "miss"),
+    row("add-endpoint-s2", 2, ADD, None, "miss"),
+    row("add-endpoint-n1", 1, None, None, "correct"),
+    row("add-endpoint-n4", 1, STAGE, ADD, "wrong"),
+]
+
+
+class SkillEvalsTest(TestCase):
+    def post(self, rows=ROWS, batch="base"):
+        return self.client.post("/skills/evals", {"batch": batch, "rows": rows}, content_type="application/json")
+
+    def test_save_and_summary(self):
+        self.assertEqual(self.post().json(), {"saved": 6})
+        d = self.client.get("/skills").json()
+        self.assertEqual(d["batch"], "base")
+        self.assertEqual(d["totals"]["eval_runs"], 6)
+        self.assertEqual((d["totals"]["correct"], d["totals"]["miss"], d["totals"]["wrong"]), (3, 2, 1))
+        by = {s["skill"]: s["eval"] for s in d["skills"]}
+        # add-endpoint: 골라야 함 4, 고름 3, 맞음 2
+        self.assertEqual((by[ADD]["should"], by[ADD]["picked"], by[ADD]["hit"]), (4, 3, 2))
+        self.assertEqual((by[ADD]["precision"], by[ADD]["recall"]), (0.6667, 0.5))
+        self.assertEqual((by[ADD]["miss"], by[ADD]["wrong"]), (2, 1))
+        self.assertEqual(by[STAGE]["recall"], 0.0)  # 골라야 했는데 add-endpoint 를 고름
+
+    def test_resend_does_not_duplicate(self):
+        self.post()
+        self.post([row("add-endpoint-s2", 1, ADD, ADD, "correct")])
+        self.assertEqual(SkillEvalRun.objects.count(), 6)
+        self.assertEqual(SkillEvalRun.objects.get(case_id="add-endpoint-s2", run=1).verdict, "correct")
+
+    def test_failed_runs_are_skipped(self):
+        r = self.post([row("add-endpoint-s3", 1, ADD, None, "miss", error="limit")])
+        self.assertEqual(r.json(), {"saved": 0})
+
+    def test_cases(self):
+        self.post()
+        cases = self.client.get("/skills/evals").json()["cases"]
+        self.assertEqual([c["id"] for c in cases], ["add-endpoint-n4", "add-endpoint-s2"])  # 틀린 요청만
+        s2 = cases[1]
+        self.assertEqual((s2["runs"], s2["miss"], s2["did"]), (2, 2, [{"name": "(Bash)", "count": 2}]))
+        self.assertEqual(len(self.client.get("/skills/evals?only=all").json()["cases"]), 4)
+        self.assertEqual(len(self.client.get(f"/skills/evals?skill={STAGE}").json()["cases"]), 1)
+
+    def test_latest_batch_is_default(self):
+        self.post()
+        self.post([row("add-endpoint-s1", 1, ADD, ADD, "correct", at="2026-11-17T12:00:00")], batch="after")
+        d = self.client.get("/skills").json()
+        self.assertEqual((d["batch"], d["totals"]["eval_runs"]), ("after", 1))
+        self.assertEqual(self.client.get("/skills?batch=base").json()["totals"]["eval_runs"], 6)
+
+    def test_errors(self):
+        self.assertEqual(self.post(rows=[]).status_code, 400)
+        r = self.post([row("x", 1, ADD, ADD, "nope")])
+        self.assertEqual((r.status_code, "verdict" in r.json()["error"]), (400, True))
+        self.assertEqual(self.client.get("/skills/evals?only=x").status_code, 400)
+        self.assertEqual(self.client.get("/skills?days=0").status_code, 400)
+
+
+class SkillUsageTest(TestCase):
+    def post(self, records):
+        return self.client.post("/skills/usage", {"records": records}, content_type="application/json")
+
+    def test_usage_summary(self):
+        recs = [
+            {"id": "a", "skill": ADD, "repo": "esports-api", "ok": True, "duration_sec": 10.0, "input_tokens": 1000,
+             "output_tokens": 200, "tool_calls": 5, "tool_errors": 0, "used_at": "2026-11-17T10:00:00+09:00"},
+            {"id": "b", "skill": ADD, "repo": "esports-ui", "ok": False, "duration_sec": 30.0, "input_tokens": 3000,
+             "output_tokens": 400, "tool_calls": 8, "tool_errors": 2, "used_at": "2026-11-17T11:00:00+09:00"},
+            {"id": "c", "skill": ADD, "used_at": "2026-11-17T12:00:00+09:00"},  # 아직 안 끝난 호출
+        ]
+        self.assertEqual(self.post(recs).status_code, 201)
+        with mock.patch.object(timezone, "now", return_value=datetime(2026, 11, 18, tzinfo=tz.utc)):
+            u = self.client.get("/skills").json()["skills"][0]["usage"]
+        self.assertEqual((u["calls"], u["success_rate"], u["avg_sec"]), (3, 0.5, 20.0))
+        self.assertEqual((u["input_tokens"], u["output_tokens"], u["tool_errors"]), (4000, 600, 2))
+
+    def test_resend_updates_same_record(self):
+        self.post([{"id": "a", "skill": ADD, "used_at": "2026-11-17T10:00:00+09:00"}])
+        self.post([{"id": "a", "skill": ADD, "ok": True, "duration_sec": 4, "used_at": "2026-11-17T10:00:00+09:00"}])
+        self.assertEqual(SkillUsage.objects.count(), 1)
+        self.assertTrue(SkillUsage.objects.get().ok)
+
+    def test_errors(self):
+        self.assertEqual(self.post([{"skill": ADD, "used_at": "2026-11-17T10:00:00"}]).status_code, 400)
+        r = self.post([{"id": "a", "skill": ADD, "used_at": "어제"}])
+        self.assertEqual((r.status_code, r.json()["error"]), (400, "used_at 은 ISO8601 시각이어야 합니다"))
+
+
+class SkillEvalJobsTest(TestCase):
+    def create(self, **body):
+        return self.client.post("/skills/evals/jobs", {"batch": "base", **body}, content_type="application/json")
+
+    def test_job_flow(self):
+        job = self.create(skills=["esports-dev:add-stage"], repeat=2).json()
+        self.assertEqual((job["status"], job["skills"], job["repeat"], job["model"]),
+                         ("queued", ["add-stage"], 2, "sonnet"))
+        self.assertEqual(self.create().status_code, 409)  # 한 번에 하나
+        self.assertEqual(self.client.get("/skills").json()["job"]["id"], job["id"])
+
+        claimed = self.client.post("/skills/evals/jobs/claim").json()["job"]
+        self.assertEqual((claimed["id"], claimed["status"]), (job["id"], "running"))
+        self.assertIsNone(self.client.post("/skills/evals/jobs/claim").json()["job"])
+
+        url = f"/skills/evals/jobs/{job['id']}/progress"
+        p = self.client.post(url, {"total": 12, "done": 5}, content_type="application/json").json()
+        self.assertEqual((p["total"], p["done"], p["status"]), (12, 5, "running"))
+        p = self.client.post(url, {"done": 12, "status": "done"}, content_type="application/json").json()
+        self.assertEqual((p["status"], p["finished_at"] is not None), ("done", True))
+        self.assertIsNone(self.client.get("/skills").json()["job"])
+        self.assertEqual(self.create().status_code, 201)  # 끝났으니 다시 요청할 수 있다
+
+    def test_cancel_stops_progress(self):
+        job = self.create().json()
+        self.client.post("/skills/evals/jobs/claim")
+        self.assertEqual(self.client.post(f"/skills/evals/jobs/{job['id']}/cancel").json()["status"], "cancelled")
+        p = self.client.post(f"/skills/evals/jobs/{job['id']}/progress", {"done": 3}, content_type="application/json")
+        self.assertEqual((p.json()["status"], p.json()["done"]), ("cancelled", 0))  # 실행기가 이걸 보고 멈춘다
+
+    def test_errors(self):
+        self.assertEqual(self.create(model="fable").status_code, 400)
+        self.assertEqual(self.create(repeat=9).status_code, 400)
+        self.assertEqual(self.create(batch="../x").status_code, 400)
+        self.assertEqual(self.client.post("/skills/evals/jobs/999/cancel").json(), {"error": "평가 실행을 찾을 수 없습니다"})
+        self.assertEqual(SkillEvalJob.objects.count(), 0)
+
+
+class SkillEvalCasesTest(TestCase):
+    FILE = [{"id": "add-endpoint-s1", "skill": ADD, "kind": "should", "split": "train", "repo": "esports-api",
+             "prompt": "엔드포인트 만들어 줘", "expect": ADD},
+            {"id": "add-endpoint-n1", "skill": ADD, "kind": "should_not", "split": "val", "repo": "esports-ui",
+             "prompt": "탭 색 바꿔 줘", "expect": None}]
+
+    def add(self, **body):
+        base = {"skill": ADD, "kind": "should", "split": "train", "repo": "esports-api", "prompt": "필드 하나 추가해 줘"}
+        return self.client.post("/skills/cases", {**base, **body}, content_type="application/json")
+
+    def sync(self, cases):
+        return self.client.post("/skills/cases/sync", {"cases": cases}, content_type="application/json").json()
+
+    def test_add_then_worker_moves_it_to_file(self):
+        self.assertEqual(self.sync(self.FILE), {"saved": 2, "pending": []})
+        c = self.add().json()
+        self.assertEqual((c["id"], c["expect"], c["origin"], c["synced"]), ("add-endpoint-u1", ADD, "ui", False))
+        self.assertEqual(self.add(prompt="다른 문장", kind="should_not", expect=STAGE).json()["id"], "add-endpoint-u2")
+
+        pending = self.sync(self.FILE)["pending"]  # 실행기가 받아서 파일에 옮겨 적는다
+        self.assertEqual([p["id"] for p in pending], ["add-endpoint-u1", "add-endpoint-u2"])
+        self.assertEqual(self.sync(self.FILE + pending)["pending"], [])
+        self.assertTrue(SkillEvalCase.objects.get(case_id="add-endpoint-u1").synced)
+        self.assertEqual(len(self.client.get(f"/skills/cases?skill={ADD}").json()["cases"]), 4)
+        self.assertEqual(len(self.client.get("/skills/cases?origin=ui").json()["cases"]), 2)
+
+    def test_removed_from_file_is_removed(self):
+        self.sync(self.FILE)
+        self.add()
+        self.sync(self.FILE[:1])
+        self.assertEqual(sorted(SkillEvalCase.objects.values_list("case_id", flat=True)),
+                         ["add-endpoint-s1", "add-endpoint-u1"])  # 아직 안 옮긴 화면 추가분은 남는다
+
+    def test_errors(self):
+        self.assertEqual(self.add(prompt=" ").json(), {"error": "prompt 가 필요합니다"})
+        self.assertEqual(self.add(repo="other").status_code, 400)
+        self.assertEqual(self.add(kind="should_not", expect=ADD).status_code, 400)
+        self.add()
+        self.assertEqual(self.add().status_code, 409)  # 같은 문장
