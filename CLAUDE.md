@@ -2,7 +2,7 @@
 
 > 프로젝트 전체 구성과 결정 사항은 **`../esports-analyzer/docs/PLAN.md`가 기준**이다.
 > **ui → api 스펙은 구글 스펙 시트 spec_sheet_lol이 기준** (링크는 PLAN.md 6장). 스펙과 다르게 구현해야 하면 먼저 사용자에게 확인한다. 스펙을 이 파일에 복사하지 않는다.
-> 드라마 스토리 예측 버전(작품·회차·예측)은 `drama` 브랜치에만 있다. main 은 LoL 만: 모델은 `matches` 앱, 엔드포인트는 `api/`.
+> 드라마 스토리 예측 버전(작품·회차·예측)은 `drama` 브랜치에만 있다. main 은 LoL 만: 모델은 `matches` 앱, 엔드포인트는 `api/`. (스킬 사용·평가용 `skills` 앱은 별개)
 
 ## 이 레포의 역할
 데이터 저장과 ui 제공. 경기 정보(op.gg), 세트 영상, analyzer 분석 결과를 저장하고 ui 에 돌려준다.
@@ -14,6 +14,8 @@
   - `games/` (LoL, `/games`, `/sources`): `views.py` 스펙 1~5번 조회, 8~12번 `POST /games`(영상 등록 + 분석), `/analyze`, `/cancel`, `/estimate`, `GET /sources`, 13번 `POST /games/{id}/lines/{line_id}/review`(대사 검수). 6·7번 `/cases`는 evaluate 단계 후
     - `analyzer.py`: analyzer HTTP 호출 (`MAIN_URL`, 스펙은 `../esports-analyzer/api/*/schemas.py`). `jobs.py`: 작업 시작, 조회할 때 상태 갱신, 끝나면 `matches/outputs.py`로 결과 저장
     - `reviews.py`: 대사 검수(LineReview)를 `/lines`에 붙이고, 번역·예상 때 고친 문장을 analyzer `translate.text_overrides`로 넘긴다
+  - `skills/` (`/skills`, 스펙 시트 번호 없음): 스킬별 집계, 사용 기록 `/usage`, 평가 결과 `/evals`, 테스트 요청 `/cases`, 평가 실행 `/evals/jobs`. 보내는 쪽은 `../dev-workflow` (훅, `evals/run.py`, `evals/worker.py`). `/cases/sync`·`/jobs/claim`·`/jobs/{id}/progress`는 실행기 전용
+- `skills/` (Claude Code 스킬 사용·선택 평가 앱. 경기 데이터와 무관): `models.py` SkillUsage(스킬 호출, 대화 내용 없음), SkillEvalRun(평가 실행 하나), SkillEvalCase(테스트 요청, 기준은 dev-workflow 의 `evals/cases`), SkillEvalJob(화면에서 요청한 평가 실행). `stats.py` 스킬별 집계(재현율·정밀도·성공률)
 - `matches/` (LoL 앱: 모델·관리 명령)
   - `models.py`: Team, Match(경기, op.gg 번호), MatchGame(세트), GamePlayer(세트별 진영·포지션·선수·챔피언), GameVideo(세트 영상 = 스펙의 games, analyzer 결과 JSON 통째로), LineReview(대사 검수: 고친 문장·O/X. 결과와 따로 둬서 재분석해도 남음, 검수 때 ASR 원문과 지금 원문이 다르면 안 씀)
   - `opgg.py`: op.gg 경기 페이지 안 JSON(`__NEXT_DATA__`)만 읽는다. op.gg 내부 API 는 쓰지 않는다. 세트별 진영·선수·챔피언은 페이지에 없다
@@ -28,7 +30,7 @@ docker compose up --build              # ui :8000, api :8002 (sqlite), analyzer 
 docker compose exec api python manage.py import_match 32706
 docker compose exec api python manage.py import_outputs words_test_1080 --title "..." --lang ko --match 32706 --set 2
 ```
-- DB 는 기본 sqlite (`db.sqlite3`, git 제외). Postgres 는 `COMPOSE_PROFILES`에 `postgres`를 넣고 `DATABASE_URL`을 바꿀 때만
+- DB 는 기본 sqlite (`db.sqlite3`, git 제외). 쓰기 요청이 겹치면 기다리도록 `transaction_mode=IMMEDIATE`. Postgres 는 `COMPOSE_PROFILES`에 `postgres`를 넣고 `DATABASE_URL`을 바꿀 때만
 - analyzer 결과 폴더는 `ANALYZER_OUTPUTS`(기본 `../esports-analyzer/outputs`)를 `/outputs`로 읽기 전용 마운트
 - analyzer 서비스는 `../esports-analyzer` 이미지·코드를 쓰고, 원본 영상 폴더 `VIDEOS_DIR`을 `/data`로 붙인다 (`GEMINI_API_KEY`는 `../esports-analyzer/.env`)
 - `/health`(db·storage 확인), `/api/schema/`, `/api/docs/`

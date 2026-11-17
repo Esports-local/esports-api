@@ -20,6 +20,20 @@ LoL 중계 번역 실험의 백엔드 (Django + DRF). 경기 정보(op.gg), 세�
 | 12 | GET | `/sources` | 원본 영상 목록 (`VIDEOS_DIR`) |
 | 13 | POST | `/games/{id}/lines/{line_id}/review` | 대사 검수: `text`(고친 문장)·`reviewed`(O/X) 중 하나 이상. 고친 문장은 번역·예상 비용 계산 때 ASR 원문 대신 쓴다 |
 
+### 스킬 사용 · 선택 평가 (`/skills`)
+Claude Code 플러그인 `esports-dev`([dev-workflow](https://github.com/Esports-local/dev-workflow))의 스킬이 얼마나 쓰이고 제대로 골라지는지 저장한다. 경기 데이터와는 무관하다. 스펙 시트 번호는 아직 없다.
+
+| 메서드 | 경로 | 설명 |
+|---|---|---|
+| GET | `/skills?batch=&days=` | 스킬별 집계: 사용(호출·성공률·시간·토큰) + 선택 평가(재현율·정밀도), 결과 이름 목록, 진행 중인 평가 |
+| POST | `/skills/usage` | 사용 기록 저장 (dev-workflow 훅이 보냄). 대화 내용은 받지 않는다 |
+| GET | `/skills/evals?batch=&skill=&only=` | 평가 요청별 결과 (기본: 틀린 요청만) |
+| POST | `/skills/evals` | 평가 실행 기록 저장 (`evals/run.py`가 보냄) |
+| GET · POST | `/skills/cases` | 테스트 요청 목록, 화면에서 추가 |
+| GET · POST | `/skills/evals/jobs` | 평가 실행 목록, 실행 요청 (한 번에 하나) |
+| POST | `/skills/evals/jobs/{id}/cancel` | 평가 실행 중지 |
+| POST | `/skills/cases/sync`, `/skills/evals/jobs/claim`, `/skills/evals/jobs/{id}/progress` | 맥에서 도는 실행기(`evals/worker.py`) 전용 |
+
 이 밖에 `GET /health`(db·저장소 확인). 에러는 `{"error": "메시지"}`. OpenAPI: http://localhost:8002/api/docs/
 
 ## 실행
@@ -45,8 +59,10 @@ docker compose exec api python manage.py test
 |---|---|
 | `api/` | 엔드포인트. 엔드포인트마다 폴더 하나 (`views.py` + 그 엔드포인트만 쓰는 파일) |
 | `api/games/` | `/games`, `/sources` (`analyzer.py` analyzer 호출, `jobs.py` 작업 시작·상태 갱신, `reviews.py` 대사 검수) |
+| `api/skills/` | `/skills` (스킬 사용 기록, 선택 평가 결과, 테스트 요청, 평가 실행 요청) |
 | `api/` 공통 | `views.py`(`/health`), `exceptions.py`(에러 형식) |
 | `matches/` | LoL 모델, `opgg.py`, `outputs.py`(analyzer 결과 저장), `screen.py`, 관리 명령 |
+| `skills/` | 스킬 사용 · 평가 모델, `stats.py`(스킬별 집계) |
 | `config/` | 설정, `urls.py`, `storage.py`(MinIO/S3) |
 
 ## 테이블 (`matches` 앱)
@@ -58,5 +74,13 @@ docker compose exec api python manage.py test
 | GamePlayer | 세트별 진영·포지션·선수·챔피언 |
 | GameVideo | 세트 영상 하나 (해설 언어별), analyzer 결과 JSON |
 | LineReview | 대사 하나의 사람 검수 (고친 문장, O/X, 검수 당시 ASR 원문). 분석 결과와 따로 두어 다시 분석해도 남고, ASR 원문이 바뀌면 그 검수는 쓰지 않는다 |
+
+## 테이블 (`skills` 앱)
+| 테이블 | 내용 |
+|---|---|
+| SkillUsage | 스킬 호출 하나 (스킬 이름, 부른 폴더, 성공 여부, 걸린 시간, 토큰, 도구 호출·오류 수, 시각) |
+| SkillEvalRun | 선택 평가 실행 하나 (결과 이름, 테스트 요청, 기대 스킬, 고른 스킬, 판정) |
+| SkillEvalCase | 테스트 요청. 기준은 dev-workflow 의 `evals/cases/*.jsonl`이고 실행기가 맞춘다 |
+| SkillEvalJob | 화면에서 요청한 평가 실행 (대기 → 실행 → 완료 · 실패 · 중지) |
 
 이전 주제(드라마 스토리 예측) 코드는 `drama` 브랜치에 있다.
