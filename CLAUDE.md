@@ -4,6 +4,13 @@
 > **ui → api 스펙은 구글 스펙 시트 spec_sheet_lol이 기준** (링크는 PLAN.md 6장). 스펙과 다르게 구현해야 하면 먼저 사용자에게 확인한다. 스펙을 이 파일에 복사하지 않는다.
 > 드라마 스토리 예측 버전(작품·회차·예측)은 `drama` 브랜치에만 있다. main 은 LoL 만: 모델은 `matches` 앱, 엔드포인트는 `api/`. (스킬 사용·평가용 `skills` 앱은 별개)
 
+## 스킬 먼저 (esports-dev 플러그인)
+아래 작업은 코드를 보거나 명령을 치기 전에 해당 스킬을 먼저 부른다. 이 문서의 구조·명령만 보고 바로 하면 스킬에 적힌 순서와 같이 고칠 곳(스펙 시트, ui·analyzer)을 빠뜨린다.
+- 엔드포인트 추가, 응답·요청 모양 변경(필드·계산값·파라미터 추가 포함) → `esports-dev:add-endpoint`
+- op.gg 경기·analyzer 결과 폴더를 DB 에 넣기 (`import_match`·`import_outputs`) → `esports-dev:import-game`
+- 로컬 서버 띄우기·끄기·로그 → `esports-dev:local-up`, 분석 작업 실패·멈춤 원인 → `esports-dev:job-debug`
+- README·CLAUDE.md 를 코드에 맞추기 → `esports-dev:docs-sync`
+
 ## 이 레포의 역할
 데이터 저장과 ui 제공. 경기 정보(op.gg), 세트 영상, analyzer 분석 결과를 저장하고 ui 에 돌려준다.
 분석은 analyzer 가 한다. 지금은 analyzer 결과 폴더를 관리 명령으로 읽어 넣는다 (큐 + 워커 연동은 나중).
@@ -14,8 +21,8 @@
   - `games/` (LoL, `/games`, `/sources`): `views.py` 스펙 1~5번 조회, 8~12번 `POST /games`(영상 등록 + 분석), `/analyze`, `/cancel`, `/estimate`, `GET /sources`, 13번 `POST /games/{id}/lines/{line_id}/review`(대사 검수). 6·7번 `/cases`는 evaluate 단계 후
     - `analyzer.py`: analyzer HTTP 호출 (`MAIN_URL`, 스펙은 `../esports-analyzer/api/*/schemas.py`). `jobs.py`: 작업 시작, 조회할 때 상태 갱신, 끝나면 `matches/outputs.py`로 결과 저장
     - `reviews.py`: 대사 검수(LineReview)를 `/lines`에 붙이고, 번역·예상 때 고친 문장을 analyzer `translate.text_overrides`로 넘긴다
-  - `skills/` (`/skills`, 스펙 시트 번호 없음): 스킬별 집계, 사용 기록 `/usage`, 평가 결과 `/evals`, 테스트 요청 `/cases`, 평가 실행 `/evals/jobs`. 보내는 쪽은 `../dev-workflow` (훅, `evals/run.py`, `evals/worker.py`). `/cases/sync`·`/jobs/claim`·`/jobs/{id}/progress`는 실행기 전용
-- `skills/` (Claude Code 스킬 사용·선택 평가 앱. 경기 데이터와 무관): `models.py` SkillUsage(스킬 호출, 대화 내용 없음), SkillEvalRun(평가 실행 하나), SkillEvalCase(테스트 요청, 기준은 dev-workflow 의 `evals/cases`), SkillEvalJob(화면에서 요청한 평가 실행). `stats.py` 스킬별 집계(재현율·정밀도·성공률)
+  - `skills/` (`/skills`, 스펙 시트 번호 없음): 스킬별 집계, 사용 기록 `/usage`, 평가 결과 `/evals`, 테스트 요청 `/cases`(화면에서 추가, `/cases/{id}`로 정답 바꾸기·빼기 → 이미 돈 결과도 다시 판정), 평가 실행 `/evals/jobs`(`case_ids`로 일부 요청만), 설명 개선 시도 `/improves`(improve.py 가 보냄), `GET /skills?compare=`로 결과 비교. 보내는 쪽은 `../dev-workflow` (훅, `evals/run.py`, `evals/worker.py`). `/cases/sync`·`/jobs/claim`·`/jobs/{id}/progress`는 실행기 전용
+- `skills/` (Claude Code 스킬 사용·선택 평가 앱. 경기 데이터와 무관): `models.py` SkillUsage(스킬 호출, 대화 내용 없음), SkillEvalRun(평가 실행 하나), SkillEvalCase(테스트 요청, 기준은 dev-workflow 의 `evals/cases`), SkillEvalJob(화면에서 요청한 평가 실행), SkillImproveTry(설명 개선 시도 하나). `stats.py` 스킬별 집계(재현율·정밀도·성공률)
 - `matches/` (LoL 앱: 모델·관리 명령)
   - `models.py`: Team, Match(경기, op.gg 번호), MatchGame(세트), GamePlayer(세트별 진영·포지션·선수·챔피언), GameVideo(세트 영상 = 스펙의 games, analyzer 결과 JSON 통째로), LineReview(대사 검수: 고친 문장·O/X. 결과와 따로 둬서 재분석해도 남음, 검수 때 ASR 원문과 지금 원문이 다르면 안 씀)
   - `opgg.py`: op.gg 경기 페이지 안 JSON(`__NEXT_DATA__`)만 읽는다. op.gg 내부 API 는 쓰지 않는다. 세트별 진영·선수·챔피언은 페이지에 없다
