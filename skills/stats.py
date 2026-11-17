@@ -6,7 +6,20 @@ from datetime import timedelta
 from django.db.models import Count, Max
 from django.utils import timezone
 
-from skills.models import SkillEvalRun, SkillUsage
+from skills.models import SkillEvalCase, SkillEvalRun, SkillUsage
+
+PLUGIN = "esports-dev:"
+
+
+def judge(expect: str, got: str) -> str:
+    """실행 한 번을 판정한다 (dev-workflow evals/run.py 의 judge 와 같은 규칙). 빈칸은 스킬 없음.
+
+    esports-dev 스킬만 센다. 기대와 같으면 correct, 아무것도 안 골랐으면 miss, 다른 스킬이면 wrong.
+    """
+    ours = got if got.startswith(PLUGIN) else ""
+    if ours == expect:
+        return "correct"
+    return "miss" if not ours else "wrong"
 
 
 def batches() -> list[dict]:
@@ -63,18 +76,19 @@ def eval_by_skill(runs: list[SkillEvalRun]) -> dict[str, dict]:
     return out
 
 
-def summary(batch: str | None, days: int = 30) -> dict:
-    """GET /skills 응답."""
+def summary(batch: str | None, days: int = 30, compare: str | None = None) -> dict:
+    """GET /skills 응답. compare 를 주면 스킬마다 그 결과 이름의 평가도 붙인다 (전후 비교)."""
     all_batches = batches()
     if not batch and all_batches:
         batch = all_batches[0]["batch"]
     runs = list(SkillEvalRun.objects.filter(batch=batch)) if batch else []
     usage, evals = usage_by_skill(days), eval_by_skill(runs)
     verdicts = Counter(r.verdict for r in runs)
-    skills = [{"skill": name, "usage": usage.get(name), "eval": evals.get(name)}
+    other = eval_by_skill(list(SkillEvalRun.objects.filter(batch=compare))) if compare and compare != batch else {}
+    skills = [{"skill": name, "usage": usage.get(name), "eval": evals.get(name), "compare": other.get(name)}
               for name in sorted(set(usage) | set(evals))]
     return {
-        "batch": batch, "batches": all_batches, "days": days,
+        "batch": batch, "batches": all_batches, "days": days, "compare": compare if other else None,
         "totals": {"eval_runs": len(runs), "correct": verdicts["correct"], "miss": verdicts["miss"],
                    "wrong": verdicts["wrong"], "accuracy": _ratio(verdicts["correct"], len(runs)),
                    "models": sorted({r.model for r in runs}),
@@ -91,6 +105,7 @@ def cases(batch: str | None, skill: str | None, only: str) -> list[dict]:
     by = defaultdict(list)
     for r in SkillEvalRun.objects.filter(batch=batch):
         by[r.case_id].append(r)
+    changes = dict(SkillEvalCase.objects.exclude(change="").values_list("case_id", "change"))
     out = []
     for case_id, runs in by.items():
         first = runs[0]
@@ -105,6 +120,8 @@ def cases(batch: str | None, skill: str | None, only: str) -> list[dict]:
         out.append({"id": case_id, "skill": first.skill, "kind": first.kind, "split": first.split,
                     "repo": first.repo, "prompt": first.prompt, "expect": first.expect or None,
                     "runs": len(runs), "correct": count["correct"], "miss": count["miss"], "wrong": count["wrong"],
-                    "did": [{"name": k, "count": v} for k, v in did.most_common()]})
+                    "did": [{"name": k, "count": v} for k, v in did.most_common()],
+                    "inputs": sorted({r.first_input for r in runs if r.verdict != "correct" and r.first_input})[:3],
+                    "change": changes.get(case_id) or None})
     out.sort(key=lambda c: (-(c["miss"] + c["wrong"]) / c["runs"], c["id"]))
     return out

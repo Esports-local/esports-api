@@ -6,7 +6,7 @@ from unittest import mock
 from django.test import TestCase
 from django.utils import timezone
 
-from skills.models import SkillEvalCase, SkillEvalJob, SkillEvalRun, SkillUsage
+from skills.models import SkillEvalCase, SkillEvalJob, SkillEvalRun, SkillImproveTry, SkillUsage
 
 ADD = "esports-dev:add-endpoint"
 STAGE = "esports-dev:add-stage"
@@ -22,8 +22,8 @@ def row(case_id, run, expect, got, verdict, skill=ADD, **extra):
 ROWS = [
     row("add-endpoint-s1", 1, ADD, ADD, "correct"),
     row("add-endpoint-s1", 2, ADD, ADD, "correct"),
-    row("add-endpoint-s2", 1, ADD, None, "miss"),
-    row("add-endpoint-s2", 2, ADD, None, "miss"),
+    row("add-endpoint-s2", 1, ADD, None, "miss", first_input="grep -rn progress api/"),
+    row("add-endpoint-s2", 2, ADD, None, "miss", first_input="ls api/games"),
     row("add-endpoint-n1", 1, None, None, "correct"),
     row("add-endpoint-n4", 1, STAGE, ADD, "wrong"),
 ]
@@ -62,8 +62,17 @@ class SkillEvalsTest(TestCase):
         self.assertEqual([c["id"] for c in cases], ["add-endpoint-n4", "add-endpoint-s2"])  # 틀린 요청만
         s2 = cases[1]
         self.assertEqual((s2["runs"], s2["miss"], s2["did"]), (2, 2, [{"name": "(Bash)", "count": 2}]))
+        self.assertEqual(s2["inputs"], ["grep -rn progress api/", "ls api/games"])  # 첫 Bash 명령
         self.assertEqual(len(self.client.get("/skills/evals?only=all").json()["cases"]), 4)
         self.assertEqual(len(self.client.get(f"/skills/evals?skill={STAGE}").json()["cases"]), 1)
+
+    def test_compare(self):
+        self.post(batch="base")
+        self.post([row("add-endpoint-s2", 1, ADD, ADD, "correct", at="2026-11-18T10:00:00")], batch="after-1")
+        d = self.client.get("/skills?batch=after-1&compare=base").json()
+        add = next(s for s in d["skills"] if s["skill"] == ADD)
+        self.assertEqual((d["compare"], add["eval"]["recall"], add["compare"]["recall"]), ("base", 1.0, 0.5))
+        self.assertIsNone(self.client.get("/skills?batch=base&compare=base").json()["compare"])
 
     def test_latest_batch_is_default(self):
         self.post()
@@ -133,6 +142,12 @@ class SkillEvalJobsTest(TestCase):
         self.assertIsNone(self.client.get("/skills").json()["job"])
         self.assertEqual(self.create().status_code, 201)  # 끝났으니 다시 요청할 수 있다
 
+    def test_job_with_case_ids(self):
+        job = self.create(case_ids=["add-endpoint-s2", "docs-sync-s3"]).json()
+        self.assertEqual(job["case_ids"], ["add-endpoint-s2", "docs-sync-s3"])
+        SkillEvalJob.objects.all().delete()
+        self.assertEqual(self.create(case_ids="add-endpoint-s2").status_code, 400)
+
     def test_cancel_stops_progress(self):
         job = self.create().json()
         self.client.post("/skills/evals/jobs/claim")
@@ -162,7 +177,7 @@ class SkillEvalCasesTest(TestCase):
         return self.client.post("/skills/cases/sync", {"cases": cases}, content_type="application/json").json()
 
     def test_add_then_worker_moves_it_to_file(self):
-        self.assertEqual(self.sync(self.FILE), {"saved": 2, "pending": []})
+        self.assertEqual(self.sync(self.FILE), {"saved": 2, "pending": [], "changes": []})
         c = self.add().json()
         self.assertEqual((c["id"], c["expect"], c["origin"], c["synced"]), ("add-endpoint-u1", ADD, "ui", False))
         self.assertEqual(self.add(prompt="다른 문장", kind="should_not", expect=STAGE).json()["id"], "add-endpoint-u2")
@@ -181,9 +196,79 @@ class SkillEvalCasesTest(TestCase):
         self.assertEqual(sorted(SkillEvalCase.objects.values_list("case_id", flat=True)),
                          ["add-endpoint-s1", "add-endpoint-u1"])  # 아직 안 옮긴 화면 추가분은 남는다
 
+    def edit(self, case_id, **body):
+        return self.client.post(f"/skills/cases/{case_id}", body, content_type="application/json")
+
+    def post_runs(self, rows):
+        return self.client.post("/skills/evals", {"batch": "base", "rows": rows}, content_type="application/json")
+
+    def test_edit_expect_rejudges_runs(self):
+        self.sync(self.FILE)
+        self.post_runs([row("add-endpoint-s1", 1, ADD, None, "miss"), row("add-endpoint-s1", 2, ADD, ADD, "correct")])
+        c = self.edit("add-endpoint-s1", expect="").json()  # 스킬 없이 답해도 되는 요청이었다
+        self.assertEqual((c["expect"], c["kind"], c["change"]), (None, "should_not", "edit"))
+        verdicts = list(SkillEvalRun.objects.order_by("run").values_list("verdict", flat=True))
+        self.assertEqual(verdicts, ["correct", "wrong"])
+        self.assertEqual(self.client.get("/skills").json()["totals"]["miss"], 0)
+
+        # 옛 정답이 든 결과 파일을 다시 보내도 지금 정답으로 판정한다
+        self.post_runs([row("add-endpoint-s1", 1, ADD, None, "miss")])
+        self.assertEqual(SkillEvalRun.objects.get(run=1).verdict, "correct")
+
+        # 실행기가 파일을 고치기 전에는 파일의 옛 값으로 덮지 않는다
+        d = self.sync(self.FILE)
+        self.assertEqual([x["id"] for x in d["changes"]], ["add-endpoint-s1"])
+        self.assertEqual(SkillEvalCase.objects.get(case_id="add-endpoint-s1").expect, "")
+        fixed = [{**self.FILE[0], "kind": "should_not", "expect": None}, self.FILE[1]]
+        self.assertEqual(self.client.post("/skills/cases/sync", {"cases": fixed, "applied": ["add-endpoint-s1"]},
+                                          content_type="application/json").json()["changes"], [])
+        self.assertEqual(SkillEvalCase.objects.get(case_id="add-endpoint-s1").change, "")
+
+    def test_remove(self):
+        self.sync(self.FILE)
+        self.post_runs([row("add-endpoint-n1", 1, None, None, "correct")])
+        self.assertEqual(self.edit("add-endpoint-n1", remove=True).json(), {"id": "add-endpoint-n1", "removed": True})
+        self.assertFalse(SkillEvalRun.objects.exists())
+        self.post_runs([row("add-endpoint-n1", 1, None, None, "correct")])  # 다시 보내도 안 들어간다
+        self.assertFalse(SkillEvalRun.objects.exists())
+        self.assertEqual([x["change"] for x in self.sync(self.FILE)["changes"]], ["remove"])
+        self.client.post("/skills/cases/sync", {"cases": self.FILE[:1], "applied": ["add-endpoint-n1"]},
+                         content_type="application/json")
+        self.assertFalse(SkillEvalCase.objects.filter(case_id="add-endpoint-n1").exists())
+
+        u = self.add().json()["id"]  # 아직 파일에 없는 화면 추가분은 바로 지운다
+        self.edit(u, remove=True)
+        self.assertFalse(SkillEvalCase.objects.filter(case_id=u).exists())
+
+    def test_edit_errors(self):
+        self.sync(self.FILE)
+        self.assertEqual(self.edit("nope", expect="").status_code, 404)
+        self.assertEqual(self.edit("add-endpoint-s1").status_code, 400)
+        self.assertEqual(self.edit("add-endpoint-s1", expect="graphify").status_code, 400)
+
     def test_errors(self):
         self.assertEqual(self.add(prompt=" ").json(), {"error": "prompt 가 필요합니다"})
         self.assertEqual(self.add(repo="other").status_code, 400)
         self.assertEqual(self.add(kind="should_not", expect=ADD).status_code, 400)
         self.add()
         self.assertEqual(self.add().status_code, 409)  # 같은 문장
+
+
+class SkillImproveTriesTest(TestCase):
+    ENTRY = {"try": 1, "at": "2026-11-17T15:06:54", "skill": ADD, "model": "sonnet", "cause": "범위",
+             "hypothesis": "가설", "change": "변경", "before_description": "전", "description": "후",
+             "accepted": False, "reason": "개선용이 안 오름", "train_before": 0.625, "train_quick": 0.5,
+             "ledger": [{"prompt": "a", "status": "broken"}, {"prompt": "b", "status": "same"}]}
+
+    def post(self, tries):
+        return self.client.post("/skills/improves", {"tries": tries}, content_type="application/json")
+
+    def test_save_and_list(self):
+        self.assertEqual(self.post([self.ENTRY]).json(), {"saved": 1})
+        self.post([{**self.ENTRY, "invalid": "환경이 달랐음"}])  # 다시 보내면 덮어쓴다
+        t = self.client.get(f"/skills/improves?skill={ADD}").json()["tries"]
+        self.assertEqual(len(t), 1)
+        self.assertEqual((t[0]["cause"], t[0]["invalid"], t[0]["broken"], t[0]["scores"]),
+                         ("범위", "환경이 달랐음", ["a"], {"train_before": 0.625, "train_quick": 0.5}))
+        self.assertEqual(self.post([{"try": 1}]).status_code, 400)
+        self.assertEqual(SkillImproveTry.objects.count(), 1)

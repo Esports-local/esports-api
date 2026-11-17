@@ -47,6 +47,7 @@ class SkillEvalRun(models.Model):
     expect = models.CharField(max_length=100, blank=True)  # 골라야 하는 스킬 (없으면 빈칸)
     got = models.CharField(max_length=100, blank=True)  # 고른 스킬 (없으면 빈칸)
     first_tool = models.CharField(max_length=100, blank=True)  # 첫 도구 호출 이름 (Skill, Bash …)
+    first_input = models.CharField(max_length=300, blank=True)  # 첫 도구 입력 요약 (Bash 명령, Read 파일 경로 …)
     verdict = models.CharField(max_length=10, choices=Verdict.choices)
     model = models.CharField(max_length=50)
     input_tokens = models.PositiveIntegerField(default=0)
@@ -75,6 +76,7 @@ ACTIVE = [JobStatus.QUEUED, JobStatus.RUNNING]
 class SkillEvalJob(models.Model):
     batch = models.CharField(max_length=100)  # 결과를 쌓을 평가 묶음
     skills = models.JSONField(default=list, blank=True)  # 접두어 없는 스킬 이름 목록. 비면 전체
+    case_ids = models.JSONField(default=list, blank=True)  # 이 요청만 돌린다 (틀린 요청 다시 재기). 비면 스킬의 전체 요청
     repeat = models.PositiveIntegerField(default=1)  # 요청마다 몇 번까지 채울지
     model = models.CharField(max_length=50, default="sonnet")
     status = models.CharField(max_length=10, choices=JobStatus.choices, default=JobStatus.QUEUED)
@@ -102,6 +104,8 @@ class SkillEvalCase(models.Model):
     expect = models.CharField(max_length=100, blank=True)  # 골라야 하는 스킬 (없으면 빈칸)
     origin = models.CharField(max_length=10, default="file")  # file | ui
     synced = models.BooleanField(default=True)  # evals/cases 파일에 들어 있는가 (화면에서 추가하면 실행기가 옮길 때까지 False)
+    # 화면에서 바꿨는데 파일에 아직 반영 안 된 것: "" | edit (정답 바꿈) | remove (뺌). 실행기가 파일을 고치면 비운다
+    change = models.CharField(max_length=10, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -109,3 +113,29 @@ class SkillEvalCase(models.Model):
 
     def __str__(self):
         return self.case_id
+
+
+class SkillImproveTry(models.Model):
+    """스킬 설명 자동 개선(dev-workflow evals/improve.py)의 시도 하나. 기준은 evals/history/<스킬>/log.jsonl"""
+    skill = models.CharField(max_length=100, db_index=True)  # esports-dev:add-endpoint
+    try_no = models.PositiveIntegerField()
+    model = models.CharField(max_length=50, blank=True)
+    cause = models.CharField(max_length=20, blank=True)  # 원인 종류: 범위 | 우선순위 | 앞부분 | 경계
+    hypothesis = models.TextField(blank=True)
+    change = models.TextField(blank=True)
+    before_description = models.TextField(blank=True)
+    description = models.TextField(blank=True)  # 제안한 새 설명
+    accepted = models.BooleanField(default=False)
+    reason = models.TextField(blank=True)  # 채택·기각 이유
+    invalid = models.TextField(blank=True)  # 비면 유효. 평가 환경이 달라 무효로 본 이유
+    scores = models.JSONField(default=dict, blank=True)  # train_before · train_after · val_before · val_after …
+    fixed = models.JSONField(default=list, blank=True)  # 고쳐진 요청 문장
+    broken = models.JSONField(default=list, blank=True)  # 새로 깨진 요청 문장
+    tried_at = models.DateTimeField()
+
+    class Meta:
+        ordering = ["skill", "-try_no"]
+        constraints = [models.UniqueConstraint(fields=["skill", "try_no"], name="uniq_improve_try")]
+
+    def __str__(self):
+        return f"{self.skill} 시도 {self.try_no}"
