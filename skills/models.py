@@ -94,6 +94,19 @@ class SkillEvalJob(models.Model):
         return f"job {self.id} {self.batch} {self.status}"
 
 
+class EvalRunner(models.Model):
+    """맥에서 도는 평가 실행기(evals/worker.py) 상태. 한 줄만 쓴다 (pk=1).
+
+    실행기는 dev.sh up 때 같이 켜지지만, 화면에서 enabled 를 켜야 평가 요청을 가져간다 (구독 한도를 쓰는 실행의 안전장치).
+    """
+    enabled = models.BooleanField(default=False)
+    last_seen = models.DateTimeField(null=True, blank=True)  # 실행기가 마지막으로 요청을 물어본 시각
+
+    @classmethod
+    def get(cls) -> "EvalRunner":
+        return cls.objects.get_or_create(pk=1)[0]
+
+
 class SkillEvalCase(models.Model):
     case_id = models.CharField(max_length=100, unique=True)  # add-endpoint-s2, 화면에서 추가한 것은 add-endpoint-u1
     skill = models.CharField(max_length=100, db_index=True)  # 이 요청이 시험하는 스킬

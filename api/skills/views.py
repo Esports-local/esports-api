@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from api.exceptions import ApiError, get_or_404
 from skills import stats
-from skills.models import ACTIVE, JobStatus, SkillEvalCase, SkillEvalJob, SkillEvalRun, SkillImproveTry, SkillUsage, Verdict
+from skills.models import ACTIVE, EvalRunner, JobStatus, SkillEvalCase, SkillEvalJob, SkillEvalRun, SkillImproveTry, SkillUsage, Verdict
 
 MODELS = ["sonnet", "haiku"]  # 평가에 쓸 수 있는 모델 (기본 모델로 돌지 않게 고정)
 MAX_REPEAT = 5
@@ -47,6 +47,14 @@ def _number(value, cast=int):
     return n if n >= 0 else None
 
 
+RUNNER_ONLINE_SEC = 30  # 실행기는 5초마다 물어본다. 이만큼 소식이 없으면 꺼진 것으로 본다
+
+
+def _runner(r: EvalRunner) -> dict:
+    online = r.last_seen is not None and (timezone.now() - r.last_seen).total_seconds() < RUNNER_ONLINE_SEC
+    return {"enabled": r.enabled, "online": online, "last_seen": r.last_seen.isoformat() if r.last_seen else None}
+
+
 def _job(j: SkillEvalJob) -> dict:
     return {"id": j.id, "batch": j.batch, "skills": j.skills, "case_ids": j.case_ids, "repeat": j.repeat,
             "model": j.model,
@@ -69,6 +77,7 @@ def skill_list(request):
                          compare=request.query_params.get("compare") or None)
     active = SkillEvalJob.objects.filter(status__in=ACTIVE).first()
     data["job"] = _job(active) if active else None
+    data["runner"] = _runner(EvalRunner.get())
     return Response(data)
 
 
@@ -168,15 +177,33 @@ def eval_jobs(request):
     return Response(_job(job), status=201)
 
 
-@extend_schema(tags=["skills"], summary="대기 중인 평가 실행 하나를 가져간다 (실행기 전용)")
+@extend_schema(tags=["skills"], summary="실행기 상태(GET), 평가 실행 허용 켜기·끄기(POST {enabled}, 화면에서)")
+@api_view(["GET", "POST"])
+def eval_runner(request):
+    runner = EvalRunner.get()
+    if request.method == "POST":
+        enabled = request.data.get("enabled")
+        if not isinstance(enabled, bool):
+            raise ApiError("enabled 는 true 또는 false 입니다")
+        runner.enabled = enabled
+        runner.save(update_fields=["enabled"])
+    return Response(_runner(runner))
+
+
+@extend_schema(tags=["skills"], summary="대기 중인 평가 실행 하나를 가져간다 (실행기 전용). 화면에서 실행 허용이 꺼져 있으면 안 준다")
 @api_view(["POST"])
 def eval_job_claim(request):
     with transaction.atomic():
-        job = SkillEvalJob.objects.filter(status=JobStatus.QUEUED).order_by("id").first()
-        if job:
-            job.status, job.started_at = JobStatus.RUNNING, timezone.now()
-            job.save(update_fields=["status", "started_at"])
-    return Response({"job": _job(job) if job else None})
+        runner = EvalRunner.get()
+        runner.last_seen = timezone.now()
+        runner.save(update_fields=["last_seen"])
+        job = None
+        if runner.enabled:
+            job = SkillEvalJob.objects.filter(status=JobStatus.QUEUED).order_by("id").first()
+            if job:
+                job.status, job.started_at = JobStatus.RUNNING, timezone.now()
+                job.save(update_fields=["status", "started_at"])
+    return Response({"job": _job(job) if job else None, "enabled": runner.enabled})
 
 
 @extend_schema(tags=["skills"], summary="평가 실행 진행 상황 보고 (실행기 전용)")
@@ -282,10 +309,16 @@ def eval_case(request, case_id: str):
         if case.synced and case.change != "remove":
             case.change = "edit"
         case.save(update_fields=["expect", "kind", "change"])
-        for r in runs:
-            r.expect, r.kind, r.verdict = expect, case.kind, stats.judge(expect, r.got)
-        SkillEvalRun.objects.bulk_update(runs, ["expect", "kind", "verdict"])
+        _rejudge(case_id, expect, case.kind)
     return Response(_case(case))
+
+
+def _rejudge(case_id: str, expect: str, kind: str) -> None:
+    """이 테스트 요청의 모든 실행을 새 정답으로 다시 판정한다 (모든 결과 이름)."""
+    runs = list(SkillEvalRun.objects.filter(case_id=case_id))
+    for r in runs:
+        r.expect, r.kind, r.verdict = expect, kind, stats.judge(expect, r.got)
+    SkillEvalRun.objects.bulk_update(runs, ["expect", "kind", "verdict"])
 
 
 @extend_schema(tags=["skills"], summary="테스트 요청 맞추기 (실행기 전용): 파일의 요청을 받고, 파일에 없는 화면 추가분과 화면에서 바꾼 것을 돌려준다")
@@ -307,8 +340,13 @@ def eval_cases_sync(request):
             ids.append(case_id)
             if case_id in changed:
                 continue  # 파일은 아직 옛 값이다. 화면에서 바꾼 값을 지킨다
-            if not SkillEvalCase.objects.filter(case_id=case_id).update(synced=True, **fields):
+            before = SkillEvalCase.objects.filter(case_id=case_id).values_list("expect", "kind").first()
+            if before is None:
                 SkillEvalCase.objects.create(case_id=case_id, origin="file", synced=True, **fields)
+                continue
+            SkillEvalCase.objects.filter(case_id=case_id).update(synced=True, **fields)
+            if before != (fields["expect"], fields["kind"]):
+                _rejudge(case_id, fields["expect"], fields["kind"])  # 파일에서 정답을 바꿨으면 이미 돈 결과도 다시 판정
         # 파일에서 지운 요청은 목록에서도 뺀다. 화면에서 추가하고 아직 안 옮긴 것은 남긴다
         SkillEvalCase.objects.filter(synced=True).exclude(case_id__in=ids).delete()
         pending = [_case(c) for c in SkillEvalCase.objects.filter(synced=False)]

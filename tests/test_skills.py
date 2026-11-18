@@ -130,6 +130,8 @@ class SkillEvalJobsTest(TestCase):
         self.assertEqual(self.create().status_code, 409)  # 한 번에 하나
         self.assertEqual(self.client.get("/skills").json()["job"]["id"], job["id"])
 
+        self.assertIsNone(self.client.post("/skills/evals/jobs/claim").json()["job"])  # 화면에서 허용 전에는 안 줌
+        self.client.post("/skills/evals/runner", {"enabled": True}, content_type="application/json")
         claimed = self.client.post("/skills/evals/jobs/claim").json()["job"]
         self.assertEqual((claimed["id"], claimed["status"]), (job["id"], "running"))
         self.assertIsNone(self.client.post("/skills/evals/jobs/claim").json()["job"])
@@ -141,6 +143,16 @@ class SkillEvalJobsTest(TestCase):
         self.assertEqual((p["status"], p["finished_at"] is not None), ("done", True))
         self.assertIsNone(self.client.get("/skills").json()["job"])
         self.assertEqual(self.create().status_code, 201)  # 끝났으니 다시 요청할 수 있다
+
+    def test_runner(self):
+        r = self.client.get("/skills/evals/runner").json()
+        self.assertEqual((r["enabled"], r["online"]), (False, False))
+        self.client.post("/skills/evals/jobs/claim")  # 실행기가 물어보면 연결된 것으로 보인다
+        self.assertTrue(self.client.get("/skills").json()["runner"]["online"])
+        self.assertTrue(self.client.post("/skills/evals/runner", {"enabled": True},
+                                         content_type="application/json").json()["enabled"])
+        self.assertEqual(self.client.post("/skills/evals/runner", {"enabled": "yes"},
+                                          content_type="application/json").status_code, 400)
 
     def test_job_with_case_ids(self):
         job = self.create(case_ids=["add-endpoint-s2", "docs-sync-s3"]).json()
@@ -223,6 +235,13 @@ class SkillEvalCasesTest(TestCase):
         self.assertEqual(self.client.post("/skills/cases/sync", {"cases": fixed, "applied": ["add-endpoint-s1"]},
                                           content_type="application/json").json()["changes"], [])
         self.assertEqual(SkillEvalCase.objects.get(case_id="add-endpoint-s1").change, "")
+
+    def test_file_answer_change_rejudges_runs(self):
+        self.sync([self.FILE[0], {**self.FILE[1], "expect": STAGE}])  # 그때 파일 정답은 add-stage
+        self.post_runs([row("add-endpoint-n1", 1, STAGE, None, "miss")])
+        self.assertEqual(SkillEvalRun.objects.get().verdict, "miss")
+        self.sync(self.FILE)  # 파일에서 정답을 스킬 없음으로 바꿈 (스킬을 뺐을 때처럼)
+        self.assertEqual(SkillEvalRun.objects.get().verdict, "correct")
 
     def test_remove(self):
         self.sync(self.FILE)
