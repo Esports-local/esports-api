@@ -1,0 +1,26 @@
+# 푸시·PR 마다 설정 확인, 마이그레이션 누락 확인, 테스트. 서비스(MinIO·analyzer) 없이 sqlite 로 돈다
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: 설정 확인
+        run: python manage.py check
+      - name: 마이그레이션 누락 확인
+        run: python manage.py makemigrations --check --dry-run
+      - name: 테스트
+        run: python manage.py test
