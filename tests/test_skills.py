@@ -6,7 +6,7 @@ from unittest import mock
 from django.test import TestCase
 from django.utils import timezone
 
-from skills.models import SkillEvalCase, SkillEvalJob, SkillEvalRun, SkillImproveTry, SkillUsage
+from skills.models import SkillEvalCase, SkillEvalJob, SkillEvalRun, SkillFix, SkillImproveTry, SkillUsage
 
 ADD = "esports-dev:add-endpoint"
 STAGE = "esports-dev:add-stage"
@@ -290,4 +290,32 @@ class SkillImproveTriesTest(TestCase):
         self.assertEqual((t[0]["cause"], t[0]["invalid"], t[0]["broken"], t[0]["scores"]),
                          ("범위", "환경이 달랐음", ["a"], {"train_before": 0.625, "train_quick": 0.5}))
         self.assertEqual(self.post([{"try": 1}]).status_code, 400)
-        self.assertEqual(SkillImproveTry.objects.count(), 1)
+        self.post([{**self.ENTRY, "try": 2, "proposed": True}])
+        self.assertTrue(self.client.get("/skills/improves").json()["tries"][0]["proposed"])  # 최신 시도가 먼저
+        self.assertEqual(SkillImproveTry.objects.count(), 2)
+
+
+class SkillFixesTest(TestCase):
+    FIX = {"case_id": "local-up-s3", "skill": "esports-dev:local-up", "repo": "esports-analyzer",
+           "advice": "claudemd", "routing": {"has_line": False, "others": ["esports-api"], "line": "- 로컬 → `esports-dev:local-up`"}}
+
+    def post(self, fixes):
+        return self.client.post("/skills/fixes", {"fixes": fixes}, content_type="application/json")
+
+    def test_replace_and_list(self):
+        self.assertEqual(self.post([self.FIX]).json(), {"saved": 1})
+        f = self.client.get("/skills/fixes").json()["fixes"][0]
+        self.assertEqual((f["case_id"], f["advice"], f["routing"]["has_line"]), ("local-up-s3", "claudemd", False))
+        self.post([])  # 더 이상 안 틀리면 지운다
+        self.assertFalse(SkillFix.objects.exists())
+        self.assertEqual(self.post([{"case_id": "x"}]).status_code, 400)
+
+    def test_fix_jobs(self):
+        job = lambda **b: self.client.post("/skills/evals/jobs", b, content_type="application/json")
+        r = job(kind="apply_line", params={"repo": "esports-analyzer", "skill": "local-up", "line": "- x"}, case_ids=["local-up-s3"])
+        self.assertEqual((r.status_code, r.json()["kind"], r.json()["batch"]), (201, "apply_line", "recheck"))
+        SkillEvalJob.objects.all().delete()
+        self.assertEqual(job(kind="propose", params={}).status_code, 400)  # skill 이 없음
+        self.assertEqual(job(kind="apply_line", params={"repo": "x", "skill": "a", "line": "b"}).status_code, 400)
+        self.assertEqual(job(kind="nope").status_code, 400)
+        self.assertEqual(job(kind="propose", params={"skill": "local-up"}).json()["batch"], "propose")

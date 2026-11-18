@@ -13,11 +13,15 @@ from rest_framework.response import Response
 
 from api.exceptions import ApiError, get_or_404
 from skills import stats
-from skills.models import ACTIVE, EvalRunner, JobStatus, SkillEvalCase, SkillEvalJob, SkillEvalRun, SkillImproveTry, SkillUsage, Verdict
+from skills.models import (ACTIVE, EvalRunner, JobStatus, SkillEvalCase, SkillEvalJob, SkillEvalRun, SkillFix,
+                           SkillImproveTry, SkillUsage, Verdict)
 
 MODELS = ["sonnet", "haiku"]  # 평가에 쓸 수 있는 모델 (기본 모델로 돌지 않게 고정)
 MAX_REPEAT = 5
 MAX_CASES = 500
+# 화면에서 요청하는 작업 종류와 꼭 있어야 하는 값. eval 은 선택 평가, 나머지는 "고칠 방법"의 버튼
+JOB_KINDS = {"eval": (), "apply_line": ("repo", "skill", "line"), "propose": ("skill",),
+             "evaluate_try": ("skill", "try"), "commit_line": ("repo", "skill")}
 JOB_NOT_FOUND = "평가 실행을 찾을 수 없습니다"
 REPOS = ["esports-analyzer", "esports-api", "esports-ui"]  # 테스트 요청을 실행하는 폴더
 CASE_FIELDS = ("skill", "kind", "split", "repo", "prompt")
@@ -56,7 +60,8 @@ def _runner(r: EvalRunner) -> dict:
 
 
 def _job(j: SkillEvalJob) -> dict:
-    return {"id": j.id, "batch": j.batch, "skills": j.skills, "case_ids": j.case_ids, "repeat": j.repeat,
+    return {"id": j.id, "kind": j.kind, "params": j.params, "batch": j.batch, "skills": j.skills, "case_ids": j.case_ids,
+            "repeat": j.repeat,
             "model": j.model,
             "status": j.status, "total": j.total, "done": j.done, "error": j.error or None,
             "created_at": j.created_at.isoformat(),
@@ -151,7 +156,14 @@ def eval_jobs(request):
     if request.method == "GET":
         return Response({"jobs": [_job(j) for j in SkillEvalJob.objects.all()[:10]]})
     d = request.data
-    batch, model, skills = d.get("batch"), d.get("model", "sonnet"), d.get("skills") or []
+    kind, params = d.get("kind") or "eval", d.get("params") or {}
+    if kind not in JOB_KINDS:
+        raise ApiError(f"kind 는 {', '.join(JOB_KINDS)} 중 하나입니다")
+    if not isinstance(params, dict) or any(params.get(k) in (None, "") for k in JOB_KINDS[kind]):
+        raise ApiError(f"params 에 {', '.join(JOB_KINDS[kind])} 가 필요합니다")
+    if kind == "apply_line" and params.get("repo") not in REPOS:
+        raise ApiError(f"repo 는 {', '.join(REPOS)} 중 하나입니다")
+    batch, model, skills = d.get("batch") or ("recheck" if kind == "apply_line" else kind), d.get("model", "sonnet"), d.get("skills") or []
     if not isinstance(batch, str) or not batch.strip():
         raise ApiError("batch 가 필요합니다")
     if "/" in batch or batch.startswith("."):
@@ -173,7 +185,7 @@ def eval_jobs(request):
         if SkillEvalJob.objects.filter(status__in=ACTIVE).exists():
             raise ApiError("이미 대기 중이거나 실행 중인 평가가 있습니다", 409)
         job = SkillEvalJob.objects.create(batch=batch.strip()[:100], skills=[s.split(":")[-1] for s in skills],
-                                          case_ids=case_ids, repeat=repeat, model=model)
+                                          case_ids=case_ids, repeat=repeat, model=model, kind=kind, params=params)
     return Response(_job(job), status=201)
 
 
@@ -357,7 +369,8 @@ def eval_cases_sync(request):
 def _try(t: SkillImproveTry) -> dict:
     return {"skill": t.skill, "try": t.try_no, "model": t.model, "cause": t.cause or None,
             "hypothesis": t.hypothesis, "change": t.change, "before_description": t.before_description,
-            "description": t.description, "accepted": t.accepted, "reason": t.reason, "invalid": t.invalid or None,
+            "description": t.description, "accepted": t.accepted, "proposed": t.proposed, "from_try": t.from_try,
+            "reason": t.reason, "invalid": t.invalid or None,
             "scores": t.scores, "fixed": t.fixed, "broken": t.broken, "tried_at": t.tried_at.isoformat()}
 
 
@@ -383,8 +396,31 @@ def improve_tries(request):
                 "model": str(e.get("model") or "")[:50], "cause": str(e.get("cause") or "")[:20],
                 **{k: str(e.get(k) or "") for k in ("hypothesis", "change", "before_description", "description",
                                                     "reason", "invalid")},
-                "accepted": e.get("accepted") is True,
+                "accepted": e.get("accepted") is True, "proposed": e.get("proposed") is True,
+                "from_try": _number(e.get("from_try")),
                 "scores": {k: e[k] for k in SCORE_KEYS if isinstance(e.get(k), (int, float))},
                 "fixed": pick("fixed"), "broken": pick("broken"), "tried_at": _time(e.get("at"), "at")})
             saved += 1
     return Response({"saved": saved}, status=201)
+
+
+@extend_schema(tags=["skills"], summary="틀린 요청의 진단·고칠 방법: 목록(GET), 통째로 바꾸기(POST, 실행기가 보냄)")
+@api_view(["GET", "POST"])
+def eval_fixes(request):
+    if request.method == "GET":
+        return Response({"fixes": [{"case_id": f.case_id, "skill": f.skill, "repo": f.repo, **f.data,
+                                    "updated_at": f.updated_at.isoformat()} for f in SkillFix.objects.all()]})
+    items = request.data.get("fixes")
+    if not isinstance(items, list):
+        raise ApiError("fixes 는 목록이어야 합니다")
+    with transaction.atomic():
+        ids = []
+        for f in items:
+            if not isinstance(f, dict) or not f.get("case_id") or not f.get("skill"):
+                raise ApiError("fixes 의 각 항목에는 case_id 와 skill 이 있어야 합니다")
+            data = {k: v for k, v in f.items() if k not in ("case_id", "skill", "repo")}
+            SkillFix.objects.update_or_create(case_id=str(f["case_id"])[:100], defaults={
+                "skill": str(f["skill"])[:100], "repo": str(f.get("repo") or "")[:100], "data": data})
+            ids.append(str(f["case_id"])[:100])
+        SkillFix.objects.exclude(case_id__in=ids).delete()  # 이제 안 틀리는 요청의 진단은 지운다
+    return Response({"saved": len(ids)}, status=201)

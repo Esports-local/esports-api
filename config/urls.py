@@ -29,6 +29,7 @@ urlpatterns = [
     path("skills/cases/<str:case_id>", skills.eval_case),
     path("skills/evals/jobs", skills.eval_jobs),
     path("skills/improves", skills.improve_tries),
+    path("skills/fixes", skills.eval_fixes),
     path("skills/evals/runner", skills.eval_runner),
     path("skills/evals/jobs/claim", skills.eval_job_claim),
     path("skills/evals/jobs/<int:pk>/progress", skills.eval_job_progress),

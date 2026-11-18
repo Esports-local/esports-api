@@ -74,6 +74,10 @@ ACTIVE = [JobStatus.QUEUED, JobStatus.RUNNING]
 
 
 class SkillEvalJob(models.Model):
+    # eval(선택 평가) | apply_line(CLAUDE.md 에 스킬 안내 한 줄 + 다시 재기) | propose(설명 수정안 받기)
+    # | evaluate_try(받아 둔 수정안으로 평가, 채택되면 PR) | commit_line(적용한 CLAUDE.md 커밋)
+    kind = models.CharField(max_length=20, default="eval")
+    params = models.JSONField(default=dict, blank=True)  # kind 별 값 (repo, skill, line, try …)
     batch = models.CharField(max_length=100)  # 결과를 쌓을 평가 묶음
     skills = models.JSONField(default=list, blank=True)  # 접두어 없는 스킬 이름 목록. 비면 전체
     case_ids = models.JSONField(default=list, blank=True)  # 이 요청만 돌린다 (틀린 요청 다시 재기). 비면 스킬의 전체 요청
@@ -139,6 +143,8 @@ class SkillImproveTry(models.Model):
     before_description = models.TextField(blank=True)
     description = models.TextField(blank=True)  # 제안한 새 설명
     accepted = models.BooleanField(default=False)
+    proposed = models.BooleanField(default=False)  # 수정안만 받고 아직 평가하지 않음
+    from_try = models.PositiveIntegerField(null=True, blank=True)  # 받아 둔 수정안(이 시도 번호)을 평가한 것
     reason = models.TextField(blank=True)  # 채택·기각 이유
     invalid = models.TextField(blank=True)  # 비면 유효. 평가 환경이 달라 무효로 본 이유
     scores = models.JSONField(default=dict, blank=True)  # train_before · train_after · val_before · val_after …
@@ -152,3 +158,15 @@ class SkillImproveTry(models.Model):
 
     def __str__(self):
         return f"{self.skill} 시도 {self.try_no}"
+
+
+class SkillFix(models.Model):
+    """정답이 맞는데도 틀린 요청의 진단과 고칠 방법. 맥의 실행기가 레포 CLAUDE.md 를 보고 만들어 통째로 보낸다."""
+    case_id = models.CharField(max_length=100, unique=True)
+    skill = models.CharField(max_length=100)  # 골라야 했던 스킬
+    repo = models.CharField(max_length=100)
+    data = models.JSONField(default=dict)  # 진단 (CLAUDE.md 안내 유무, 다른 레포, 추가할 한 줄, 권하는 수정안)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["case_id"]
