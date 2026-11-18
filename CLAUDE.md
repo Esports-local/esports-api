@@ -8,8 +8,7 @@
 아래 작업은 코드를 보거나 명령을 치기 전에 해당 스킬을 먼저 부른다. 이 문서의 구조·명령만 보고 바로 하면 스킬에 적힌 순서와 같이 고칠 곳(스펙 시트, ui·analyzer)을 빠뜨린다.
 - 엔드포인트 추가, 응답·요청 모양 변경(필드·계산값·파라미터 추가 포함) → `esports-dev:add-endpoint`
 - op.gg 경기·analyzer 결과 폴더를 DB 에 넣기 (`import_match`·`import_outputs`) → `esports-dev:import-game`
-- 로컬 서버 띄우기·끄기·로그 → `esports-dev:local-up`, 분석 작업 실패·멈춤 원인 → `esports-dev:job-debug`
-- README·CLAUDE.md 를 코드에 맞추기 → `esports-dev:docs-sync`
+- 로컬 서버 띄우기·끄기·로그 → `esports-dev:local-up`
 
 ## 이 레포의 역할
 데이터 저장과 ui 제공. 경기 정보(op.gg), 세트 영상, analyzer 분석 결과를 저장하고 ui 에 돌려준다.
@@ -30,6 +29,7 @@
   - 관리 명령: `init_storage`(MinIO 버킷 준비, compose 가 띄울 때 실행), `import_match <op.gg 번호|주소>`, `import_outputs <analyzer 결과 이름> --title --lang --match --set` (화면 OCR 팀·선수 이름으로 세트를 채움)
 - `config/`: 설정·`urls.py`, `storage.py`(MinIO/S3, `/health`·재생 주소·`init_storage`가 같이 씀)
 - 테스트: 최상위 `tests/` (`test_matches.py`, `test_games.py` …). 실행 `docker compose exec api python manage.py test`
+- CI: `.github/workflows/ci.yml` (푸시·PR 마다 `check`, 마이그레이션 누락 확인, 테스트. 서비스 없이 sqlite)
 
 ```
 cp .env.example .env
