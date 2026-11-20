@@ -1,8 +1,10 @@
-"""op.gg 경기 페이지 읽기.
+"""op.gg 경기 페이지와 세트 정보 읽기.
 
-esports.op.gg/matches/<번호>/<slug> 페이지는 경기 정보를 페이지 안 JSON(__NEXT_DATA__)으로 같이 보낸다.
-그 JSON 만 읽는다 (op.gg 내부 API 는 쓰지 않음). robots.txt 는 /matches 를 막지 않는다.
-세트별 진영·선수·챔피언은 이 JSON 에 없다.
+- 경기: esports.op.gg/matches/<번호>/<slug> 페이지는 경기 정보를 페이지 안 JSON(__NEXT_DATA__)으로 같이 보낸다.
+  robots.txt 는 /matches 를 막지 않는다.
+- 세트별 진영·선수·챔피언은 그 JSON 에 없고, 페이지가 뜬 뒤 op.gg 화면이 /matches/graphql 의
+  GetGameByMatch(matchId, set) 로 불러온다. 같은 쿼리에서 필요한 필드만 골라 세트당 한 번 요청한다
+  (op.gg 내부 API 는 이 하나만 쓴다).
 """
 
 import json
@@ -13,6 +15,16 @@ import requests
 BASE = "https://esports.op.gg"
 USER_AGENT = "esports-api/0.1 (research; match metadata)"
 _NEXT_DATA = re.compile(r'<script id="__NEXT_DATA__"[^>]*>(.*?)</script>', re.S)
+GRAPHQL_URL = f"{BASE}/matches/graphql"
+GAME_QUERY = """query GetGameByMatch($matchId: ID!, $set: Int) {
+  gameByMatch(matchId: $matchId, set: $set) {
+    id
+    winner { id }
+    teams { side bans team { id acronym } }
+    players { side position championId player { nickName } }
+  }
+}"""
+ROLES = {"top": "top", "jun": "jungle", "mid": "mid", "adc": "bot", "sup": "support"}  # op.gg → GamePlayer.role
 
 
 def match_url(ref: str) -> str:
@@ -74,3 +86,36 @@ def games_from_videos(match: dict) -> dict[int, dict]:
         elif v.get("type") == "highlights":
             row["highlight_url"] = v.get("url") or ""
     return games
+
+
+def fetch_game(match_id: int | str, set_number: int, timeout: float = 20) -> dict | None:
+    """세트 하나의 gameByMatch JSON. 열리지 않은 세트(3:1 로 끝난 BO5 의 5세트 등)는 None.
+
+    Raises:
+        requests.HTTPError: 요청 실패.
+        ValueError: GraphQL 오류 응답.
+    """
+    res = requests.post(
+        GRAPHQL_URL, timeout=timeout,
+        headers={"User-Agent": USER_AGENT, "Referer": f"{BASE}/matches/{match_id}"},
+        json={"operationName": "GetGameByMatch", "query": GAME_QUERY,
+              "variables": {"matchId": str(match_id), "set": set_number}})
+    res.raise_for_status()
+    body = res.json()
+    if body.get("errors"):
+        raise ValueError(f"op.gg 세트 조회 오류: {body['errors'][0].get('message')}")
+    return (body.get("data") or {}).get("gameByMatch")
+
+
+def parse_game(game: dict) -> dict:
+    """gameByMatch JSON → {opgg_game_id, winner: 팀 op.gg id | None, sides: {진영: 팀 op.gg id},
+    bans: {진영: [챔피언 번호]}, players: [{side, role, name, champion_id}]}. 모르는 포지션의 선수는 빠진다."""
+    teams = [t for t in game.get("teams") or [] if t.get("side") in ("blue", "red")]
+    players = [{"side": p["side"], "role": ROLES[p.get("position")], "name": (p.get("player") or {}).get("nickName") or "",
+                "champion_id": str(p.get("championId") or "")}
+               for p in game.get("players") or [] if p.get("side") in ("blue", "red") and p.get("position") in ROLES]
+    winner = (game.get("winner") or {}).get("id")
+    return {"opgg_game_id": int(game["id"]), "winner": int(winner) if winner else None,
+            "sides": {t["side"]: int(t["team"]["id"]) for t in teams if (t.get("team") or {}).get("id")},
+            "bans": {t["side"]: [str(b) for b in t.get("bans") or []] for t in teams},
+            "players": players}

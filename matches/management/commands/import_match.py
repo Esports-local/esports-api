@@ -1,14 +1,19 @@
-"""op.gg 경기 페이지에서 경기·팀·세트를 가져와 저장한다. 같은 경기는 덮어쓴다.
+"""op.gg 에서 경기·팀·세트와 세트별 진영·선수·챔피언을 가져와 저장한다. 같은 경기는 덮어쓴다.
 
     python manage.py import_match 32706
     python manage.py import_match https://esports.op.gg/matches/32706/blg-vs-t1-2026-11-09
+
+세트 정보(matches/lineups.py: op.gg GetGameByMatch + Data Dragon)를 받지 못하면 경고만 남기고 경기 정보는 저장한다.
+세트에 붙은 영상의 헤더(GameVideo.header)도 다시 만든다. 선수 한글 표기(name_ko)는 건드리지 않는다.
 """
 
+import requests
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.dateparse import parse_datetime
 
 from matches import opgg
+from matches.lineups import import_lineups
 from matches.models import Match, MatchGame, Team
 
 
@@ -25,10 +30,15 @@ class Command(BaseCommand):
             except (ValueError, OSError) as e:
                 raise CommandError(f"{ref}: {e}") from e
             match = save_match(url, data)
+            try:
+                lineups = import_lineups(match)
+            except (ValueError, OSError, requests.RequestException) as e:
+                lineups = 0
+                self.stderr.write(self.style.WARNING(f"{match.opgg_id}: 세트별 선수·챔피언을 가져오지 못했습니다: {e}"))
             games = ", ".join(f"{g.number}세트({g.opgg_game_id})" for g in match.games.all())
             self.stdout.write(self.style.SUCCESS(
                 f"{match.opgg_id} {match.name} | {match.home_team} {match.home_score}:{match.away_score} "
-                f"{match.away_team} | {match.begin_at} | 세트 {games or '없음'}"))
+                f"{match.away_team} | {match.begin_at} | 세트 {games or '없음'} | 선수·챔피언 {lineups}세트"))
 
 
 def save_team(t: dict) -> Team:
@@ -58,3 +68,5 @@ def save_match(url: str, d: dict) -> Match:
     for number, g in sorted(opgg.games_from_videos(d).items()):
         MatchGame.objects.update_or_create(match=match, number=number, defaults=g)
     return match
+
+

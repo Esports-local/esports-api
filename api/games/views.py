@@ -1,5 +1,8 @@
 """/games·/sources 엔드포인트 (스펙 시트 spec_sheet_lol 1~5번, 8~13번)."""
 
+import logging
+
+import requests
 from django.db import transaction
 from django.http import Http404
 from drf_spectacular.utils import extend_schema
@@ -9,10 +12,13 @@ from rest_framework.response import Response
 from api.exceptions import ApiError, get_or_404
 from api.games import analyzer, jobs, reviews
 from matches import opgg
+from matches.header import refresh_header
+from matches.lineups import import_lineups
 from matches.management.commands.import_match import save_match
 from matches.models import GameVideo, LineReview, Match, MatchGame, Role
 from matches.screen import filter_runs, snapshot, static_values
 
+log = logging.getLogger(__name__)
 GAME_NOT_FOUND = "영상을 찾을 수 없습니다"
 STAGES = ["preprocess", "segments", "hls", "roi_ocr", "asr", "translate", "timeline", "evaluate"]
 RUNNABLE = ["preprocess", "roi_ocr", "asr", "translate", "timeline"]  # ui 에서 고를 수 있는 단계
@@ -103,7 +109,8 @@ def _translate_params(data) -> dict:
 
 
 def _match_game(data) -> MatchGame | None:
-    """요청의 match(op.gg 번호)·set 으로 세트를 찾는다. 경기가 없으면 op.gg 에서 가져온다."""
+    """요청의 match(op.gg 번호)·set 으로 세트를 찾는다. 경기가 없으면 op.gg 에서 가져온다.
+    세트에 선수가 없으면 op.gg 세트 정보(선수·챔피언·밴)도 받는다 (실패해도 등록은 계속)."""
     match_no, set_no = data.get("match"), data.get("set")
     if match_no in (None, "") and set_no in (None, ""):
         return None
@@ -118,6 +125,12 @@ def _match_game(data) -> MatchGame | None:
             raise ApiError(f"op.gg 경기 {match_no} 를 가져오지 못했습니다: {e}", 502) from e
         save_match(url, d)
     game = MatchGame.objects.filter(match__opgg_id=match_no, number=set_no).first()
+    if game is None or not game.players.exists():
+        try:
+            import_lineups(Match.objects.get(opgg_id=match_no))
+        except (ValueError, OSError, requests.RequestException) as e:
+            log.warning("op.gg 세트 정보를 가져오지 못했습니다 (%s): %s", match_no, e)
+        game = MatchGame.objects.filter(match__opgg_id=match_no, number=set_no).first()
     if game is None:
         raise ApiError(f"경기 {match_no} 에 {set_no}세트가 없습니다", 404)
     return game
@@ -154,6 +167,7 @@ def game_list(request):
         v.title = (data.get("title") or "").strip() or v.title
         v.language, v.video_name, v.game = language, name, game or v.game
         v.save()
+    refresh_header(v)
     jobs.start(v, stages, params)
     return Response(_detail(v, None), status=201)
 

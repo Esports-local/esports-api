@@ -3,8 +3,8 @@
     python manage.py import_outputs words_test_1080 --title "Worlds 2026 4강 T1 vs BLG 2세트" --lang ko \\
         --match 32706 --set 2
 
---match/--set 을 주면 그 세트(MatchGame)에 연결하고, 화면 OCR 로 읽은 팀(블루/레드)과
-선수 이름(진영·포지션)을 세트에 채운다 (op.gg 페이지에 없는 정보). 챔피언은 건드리지 않는다.
+--match/--set 을 주면 그 세트(MatchGame)에 연결하고, import_match(op.gg)로 못 채운 팀(블루/레드)과
+선수 이름(진영·포지션)만 화면 OCR 로 채운다. op.gg 값과 챔피언은 건드리지 않는다.
 outputs 폴더는 컨테이너의 /outputs (compose 가 ANALYZER_OUTPUTS 호스트 폴더를 붙임).
 """
 

@@ -3,7 +3,8 @@
 - Team: 팀. op.gg 팀 id 로 구분
 - Match: 경기 (BO3/BO5 하나). op.gg 경기 번호로 구분
 - MatchGame: 세트. 영상 하나가 세트 하나에 대응한다
-- GamePlayer: 세트별 진영·포지션·선수·챔피언. op.gg 페이지에 없어서 화면 OCR 이나 직접 입력으로 채운다
+- GamePlayer: 세트별 진영·포지션·선수·챔피언. import_match 가 op.gg 세트 정보(GetGameByMatch)로 채우고,
+  못 채운 칸만 import_outputs 가 화면 OCR 로 채운다. 선수 한글 표기(name_ko)는 직접 입력
 """
 
 from django.db import models
@@ -71,6 +72,7 @@ class MatchGame(models.Model):
     blue_team = models.ForeignKey(Team, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
     red_team = models.ForeignKey(Team, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
     winner = models.ForeignKey(Team, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
+    bans = models.JSONField(default=dict, blank=True)  # {"blue": ["Galio", …], "red": […]} 챔피언 영어 이름 (op.gg)
 
     class Meta:
         ordering = ["match_id", "number"]
@@ -122,6 +124,7 @@ class GameVideo(models.Model):
     analyze_status = models.CharField(max_length=10, choices=AnalyzeStatus.choices, default=AnalyzeStatus.PENDING)
     run_log = models.JSONField(default=list, blank=True)  # work/run_log.json
     results = models.JSONField(default=dict, blank=True)  # {stage: work/<stage>.json 전체}
+    header = models.JSONField(default=dict, blank=True)  # 경기 기본 정보 (matches/header.py, 세트가 있을 때 자동)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

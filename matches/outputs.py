@@ -6,6 +6,7 @@ from pathlib import Path
 
 from django.db import transaction
 
+from matches.header import refresh_header
 from matches.models import AnalyzeStatus, GamePlayer, GameVideo, MatchGame
 from matches.screen import static_values
 
@@ -34,19 +35,20 @@ def save_video(work: Path, work_name: str, title: str, lang: str, game: MatchGam
                   "analyze_status": AnalyzeStatus.DONE if results else AnalyzeStatus.PENDING, **extra})
     if game and "roi_ocr" in results:
         fill_game_from_screen(game, results["roi_ocr"]["result"]["runs"])
-    return video
+    return refresh_header(video)
 
 
 def fill_game_from_screen(game: MatchGame, runs: list[dict]) -> None:
-    """화면에서 읽은 팀 약칭으로 블루/레드를 정하고, 선수 이름을 진영·포지션별로 저장한다."""
+    """op.gg(import_match)로 못 채운 칸만 화면 OCR 로 채운다: 블루/레드 팀, 진영·포지션별 선수 이름.
+    op.gg 에서 받은 값은 OCR 잡음으로 덮어쓰지 않는다."""
     statics = static_values(runs)
     teams = {t.acronym.lower(): t for t in (game.match.home_team, game.match.away_team)}
     shown = statics.get("team", {})
     blue, red = teams.get(shown.get("blue", "").lower()), teams.get(shown.get("red", "").lower())
-    if blue and red and blue != red:
+    if blue and red and blue != red and not (game.blue_team_id and game.red_team_id):
         game.blue_team, game.red_team = blue, red
         game.save(update_fields=["blue_team", "red_team"])
     for slot, name in statics.get("player_name", {}).items():
         side, _, role = slot.partition("_")
         if side in ("blue", "red") and role:
-            GamePlayer.objects.update_or_create(game=game, side=side, role=role, defaults={"name": name})
+            GamePlayer.objects.get_or_create(game=game, side=side, role=role, defaults={"name": name})
