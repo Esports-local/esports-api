@@ -19,6 +19,10 @@ LoL 중계 번역 실험의 백엔드 (Django + DRF). 경기 정보(op.gg), 세�
 | 11 | GET | `/games/{id}/estimate?conditions=A,B` | 번역 예상 입력 토큰 |
 | 12 | GET | `/sources` | 원본 영상 목록 (`VIDEOS_DIR`) |
 | 13 | POST | `/games/{id}/lines/{line_id}/review` | 대사 검수: `text`(고친 문장)·`reviewed`(O/X) 중 하나 이상. 고친 문장은 번역·예상 비용 계산 때 ASR 원문 대신 쓴다 |
+| 14 | GET | `/games/{id}/events?type=&player=` | 경기 이벤트(킬·타워·오브젝트, analyzer timeline) + 이벤트마다 숏폼 기본 구간 `clip` |
+| 15 | POST | `/games/{id}/shorts` | 숏폼 만들기 `{event_ids, subtitles: ko\|en\|none, pre_sec, post_sec}`. 같은 입력이면 기존 숏폼(200), 실패한 것은 다시 렌더 |
+| 16 | GET | `/games/{id}/shorts` | 세트의 숏폼 목록 (최근순) |
+| 17 | GET | `/shorts/{id}` | 숏폼 상태·재생 주소·렌더 시간. 끝나지 않았으면 analyzer 상태로 갱신 |
 
 ### 스킬 사용 · 선택 평가 (`/skills`)
 Claude Code 플러그인 `esports-dev`([dev-workflow](https://github.com/Esports-local/dev-workflow))의 스킬이 얼마나 쓰이고 제대로 골라지는지 저장한다. 경기 데이터와는 무관하다. 스펙 시트 번호는 아직 없다.
