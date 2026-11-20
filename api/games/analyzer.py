@@ -45,3 +45,15 @@ def estimate(video: str, conditions: list[str], text_overrides: dict[str, str] |
     """POST /estimate — {model, lines, requests, input_tokens: {조건: 토큰}}. text_overrides: 사람이 고친 대사"""
     return _call("POST", "/estimate", json={"video": video, "conditions": conditions,
                                             "text_overrides": text_overrides or {}}, timeout=600)
+
+
+def create_short(key: str, video: str, segments: list[dict], subtitles: list[dict], title: str | None) -> dict:
+    """POST /shorts — 렌더를 줄에 세운다 (다른 렌더가 돌고 있어도 거절하지 않음). 같은 key·내용이면 기존 상태,
+    실패한 것이면 다시 줄을 세운다. 응답 {key, status: queued|rendering|succeeded|failed, output, render_sec, error}"""
+    return _call("POST", "/shorts", json={"key": key, "video": video, "segments": segments,
+                                         "subtitles": subtitles, "title": title})
+
+
+def get_short(key: str) -> dict:
+    """GET /shorts/{key} — analyzer 를 다시 띄웠으면 404 (같은 내용으로 다시 보내면 됨)."""
+    return _call("GET", f"/shorts/{key}")

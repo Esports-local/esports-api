@@ -4,6 +4,7 @@ from drf_spectacular.views import SpectacularAPIView, SpectacularSwaggerView
 
 from api import views as common
 from api.games import views as games
+from api.shorts import views as shorts
 from api.skills import views as skills
 
 urlpatterns = [
@@ -20,6 +21,10 @@ urlpatterns = [
     path("games/<int:pk>/cancel", games.game_cancel),
     path("games/<int:pk>/estimate", games.game_estimate),
     path("sources", games.source_list),
+    # 경기 이벤트·숏폼 (14~17번)
+    path("games/<int:pk>/events", shorts.game_events),
+    path("games/<int:pk>/shorts", shorts.game_shorts),
+    path("shorts/<int:pk>", shorts.short_detail),
     # skills (Claude Code 스킬 사용 기록·선택 평가)
     path("skills", skills.skill_list),
     path("skills/usage", skills.skill_usage),

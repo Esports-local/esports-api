@@ -152,3 +152,37 @@ class LineReview(models.Model):
 
     def __str__(self):
         return f"{self.video_id}#{self.line_id}"
+
+
+class ShortStatus(models.TextChoices):
+    QUEUED = "queued"
+    RENDERING = "rendering"
+    DONE = "done"
+    FAILED = "failed"
+
+
+class Short(models.Model):
+    """세로(9:16) 숏폼 하나. 렌더는 analyzer 가 하고, 끝나면 mp4 를 저장소(shorts/<key>.mp4)에 올린다.
+
+    key 는 입력(영상 결과 버전, 구간, 자막 문장, 제목)의 해시라 같은 요청은 같은 행을 쓴다 (다시 렌더하지 않음).
+    """
+
+    video = models.ForeignKey(GameVideo, on_delete=models.CASCADE, related_name="shorts")
+    key = models.CharField(max_length=64, unique=True)
+    event_ids = models.JSONField(default=list)
+    segments = models.JSONField(default=list)  # [{start_sec, end_sec}] 원본 기준, 합친 뒤
+    subtitles = models.CharField(max_length=4, default="ko")  # ko | en | none
+    title = models.CharField(max_length=200, blank=True)
+    status = models.CharField(max_length=10, choices=ShortStatus.choices, default=ShortStatus.QUEUED)
+    storage_key = models.CharField(max_length=300, blank=True)  # shorts/<key>.mp4 (done 일 때)
+    render_sec = models.FloatField(null=True, blank=True)
+    attempts = models.PositiveIntegerField(default=0)
+    error = models.TextField(blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    finished_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        ordering = ["-created_at", "-id"]
+
+    def __str__(self):
+        return f"{self.video.work_name} {self.key} ({self.status})"

@@ -5,7 +5,7 @@
   서명에 host 가 포함되므로 브라우저가 접속할 주소로 서명해야 한다.
 
 공개 범위
-- hls/ 는 공개 읽기 (버킷 정책). master.m3u8 안의 index.m3u8·ts 는 상대 경로로 요청되어
+- hls/, shorts/ 는 공개 읽기 (버킷 정책). master.m3u8 안의 index.m3u8·ts 는 상대 경로로 요청되어
   서명을 붙일 수 없으므로, 재생 주소는 서명 없는 public_url 을 쓴다.
 - raw/(원본), analysis/(분석 결과) 는 비공개. 필요하면 presigned_url.
 
@@ -20,7 +20,7 @@ from botocore.client import Config
 from botocore.exceptions import ClientError
 from django.conf import settings
 
-PUBLIC_PREFIXES = ("hls/",)
+PUBLIC_PREFIXES = ("hls/", "shorts/")  # shorts/: 숏폼 mp4 (브라우저가 바로 재생)
 
 # 저장소가 꺼져 있거나 막혀 있을 때 오래 멈추지 않도록 짧게 둔다
 _CONFIG = Config(
@@ -115,3 +115,8 @@ def presigned_url(key: str | None, expires: int | None = None) -> str | None:
         Params={"Bucket": settings.S3_BUCKET, "Key": key},
         ExpiresIn=expires or settings.S3_PRESIGN_EXPIRES,
     )
+
+
+def upload_file(path, key: str, content_type: str) -> None:
+    """로컬 파일을 저장소 key 에 올린다 (같은 key 는 덮어씀)."""
+    client().upload_file(str(path), settings.S3_BUCKET, key, ExtraArgs={"ContentType": content_type})

@@ -9,7 +9,7 @@ from django.db import transaction
 from matches.models import AnalyzeStatus, GamePlayer, GameVideo, MatchGame
 from matches.screen import static_values
 
-STAGES = ["preprocess", "segments", "roi_ocr", "asr", "translate", "evaluate"]
+STAGES = ["preprocess", "segments", "roi_ocr", "asr", "translate", "timeline", "evaluate"]
 OUTPUTS_ROOT = Path(os.environ.get("ANALYZER_OUTPUTS_IN_CONTAINER", "/outputs"))
 
 
