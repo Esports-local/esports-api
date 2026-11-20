@@ -25,9 +25,11 @@
 - `skills/` (Claude Code 스킬 사용·선택 평가 앱. 경기 데이터와 무관): `models.py` SkillUsage(스킬 호출, 대화 내용 없음), SkillEvalRun(평가 실행 하나), SkillEvalCase(테스트 요청, 기준은 dev-workflow 의 `evals/cases`), SkillEvalJob(화면에서 요청한 평가 실행), SkillImproveTry(설명 개선 시도 하나), EvalRunner(실행기 연결 시각·평가 실행 허용, 한 줄), SkillFix(틀린 요청의 진단·고칠 방법). `stats.py` 스킬별 집계(재현율·정밀도·성공률)
 - `matches/` (LoL 앱: 모델·관리 명령)
   - `models.py`: Team, Match(경기, op.gg 번호), MatchGame(세트), GamePlayer(세트별 진영·포지션·선수·챔피언), GameVideo(세트 영상 = 스펙의 games, analyzer 결과 JSON 통째로), Short(숏폼: key·구간·상태·저장소 key·렌더 시간·시도 횟수), LineReview(대사 검수: 고친 문장·O/X. 결과와 따로 둬서 재분석해도 남음, 검수 때 ASR 원문과 지금 원문이 다르면 안 씀)
-  - `opgg.py`: op.gg 경기 페이지 안 JSON(`__NEXT_DATA__`)만 읽는다. op.gg 내부 API 는 쓰지 않는다. 세트별 진영·선수·챔피언은 페이지에 없다
+  - `opgg.py`: 경기는 op.gg 경기 페이지 안 JSON(`__NEXT_DATA__`), 세트별 진영·선수·챔피언 번호·밴은 op.gg 화면이 쓰는 `/matches/graphql`의 `GetGameByMatch`(필요한 필드만, 세트당 한 번). op.gg 내부 API 는 이 하나만 쓴다. `ddragon.py`: 챔피언 번호 → 영어·한국어 이름·스킬 이름 (Riot Data Dragon, 경기 패치 버전)
+  - `lineups.py`: op.gg 세트 정보 → MatchGame(블루/레드·승자·밴 `bans`) + GamePlayer. `import_match`와 `POST /games`(세트에 선수가 없을 때)가 같이 씀
+  - `header.py`: `GameVideo.header` = 숏폼·자막 교정 때 쓰는 경기 기본 정보 (경기·팀·선수·챔피언·스킬·밴, 시리즈 스코어·이전 세트 밴픽·피어리스로 못 쓰는 챔피언). op.gg·Data Dragon 만 쓰고 사람·LLM 입력 없음. 영상 등록, 분석 끝(`save_video`), `import_outputs`, `import_match`(세트 영상 전부) 때 자동으로 다시 만든다. API 응답에는 아직 안 나감
   - `outputs.py`: analyzer 결과 폴더 → GameVideo 저장 (`jobs.py`와 `import_outputs`가 같이 씀). `screen.py`: roi_ocr 구간 → 대사 시점 화면 정보 (잡음 구간 제외, 안 바뀌는 값은 가장 오래 뜬 값)
-  - 관리 명령: `init_storage`(MinIO 버킷 준비, compose 가 띄울 때 실행), `import_match <op.gg 번호|주소>`, `import_outputs <analyzer 결과 이름> --title --lang --match --set` (화면 OCR 팀·선수 이름으로 세트를 채움)
+  - 관리 명령: `init_storage`(MinIO 버킷 준비, compose 가 띄울 때 실행), `import_match <op.gg 번호|주소>`(경기·세트 + 세트별 블루/레드 팀·선수·챔피언, 선수 한글 표기 `name_ko`는 안 건드림), `import_outputs <analyzer 결과 이름> --title --lang --match --set` (op.gg 로 못 채운 팀·선수 칸만 화면 OCR 로 채움)
 - `config/`: 설정·`urls.py`, `storage.py`(MinIO/S3, `/health`·재생 주소·`init_storage`가 같이 씀)
 - 테스트: 최상위 `tests/` (`test_matches.py`, `test_games.py` …). 실행 `docker compose exec api python manage.py test`
 - CI: `.github/workflows/ci.yml` (푸시·PR 마다 `check`, 마이그레이션 누락 확인, 테스트. 서비스 없이 sqlite)
