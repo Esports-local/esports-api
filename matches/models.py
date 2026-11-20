@@ -81,6 +81,10 @@ class MatchGame(models.Model):
     def __str__(self):
         return f"{self.match} {self.number}세트"
 
+    def has_opgg_lineup(self) -> bool:
+        """op.gg 세트 정보로 선수가 채워졌는지. 챔피언은 op.gg 에서만 오므로 챔피언이 있는 선수가 있으면 op.gg 값."""
+        return self.players.exclude(champion="").exists()
+
 
 class GamePlayer(models.Model):
     game = models.ForeignKey(MatchGame, on_delete=models.CASCADE, related_name="players")

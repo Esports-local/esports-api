@@ -135,7 +135,7 @@ class LineupTest(TestCase):
         save_lineup(match, 2, opgg.parse_game(GAME), CHAMPS)
         with mock.patch("matches.ddragon.champions", return_value=CHAMPS):
             h = build_header(match.games.get(number=2))
-        self.assertEqual(h["match"]["set"], 2)
+        self.assertEqual((h["match"]["set"], h["match"]["format"]), (2, "BO5"))
         self.assertEqual(h["teams"], {"blue": {"name": "T1", "full": "T1"},
                                       "red": {"name": "BLG", "full": "Bilibili Gaming"}})
         self.assertEqual(h["players"][0], {"side": "blue", "team": "T1", "role": "support", "name": "Keria",
@@ -149,6 +149,65 @@ class LineupTest(TestCase):
         self.assertEqual(s["fearless_unavailable"], [{"name": "Jhin", "ko": "진", "set": 1, "team": "T1"}])
         empty = MatchGame.objects.create(match=match, number=3)  # 선수가 없는 세트(op.gg 세트 정보 없음)
         self.assertEqual(build_header(empty), {})
+
+    @mock.patch("matches.ddragon.skills", return_value={})
+    @mock.patch("matches.ddragon.champions", return_value=CHAMPS)
+    @mock.patch("matches.ddragon.version_for", return_value="16.22.1")
+    def test_no_fearless_outside_fearless_leagues(self, *_):
+        match = save_match("https://esports.op.gg/matches/32706", {**MATCH, "tournament": {
+            "name": "Playoffs", "serie": {"year": 2023, "league": {"shortName": "Worlds"}}}})
+        save_lineup(match, 1, opgg.parse_game(GAME1), CHAMPS)
+        save_lineup(match, 2, opgg.parse_game(GAME), CHAMPS)
+        s = build_header(match.games.get(number=2))["series"]
+        self.assertEqual((s["fearless"], s["fearless_unavailable"], len(s["previous"])), (False, [], 1))
+
+    def test_unknown_champion_keeps_existing(self):
+        match = save_match("https://esports.op.gg/matches/32706", MATCH)
+        save_lineup(match, 2, opgg.parse_game(GAME), CHAMPS)
+        save_lineup(match, 2, opgg.parse_game(GAME), {})  # 번호를 모르는 챔피언
+        self.assertEqual(match.games.get(number=2).players.get(role="support").champion, "Poppy")
+
+    def test_screen_fixes_old_screen_values(self):
+        match = save_match("https://esports.op.gg/matches/32706", MATCH)
+        game = match.games.get(number=2)  # op.gg 세트 정보 없음
+        run = lambda tag, slot, text: {"tag": tag, "slot": slot, "text": text, "start_sec": 0, "end_sec": 900,  # noqa
+                                       "samples": 50}
+        fill_game_from_screen(game, [run("team", "blue", "BLG"), run("team", "red", "T1"),
+                                     run("player_name", "blue_support", "Kerla")])
+        fill_game_from_screen(game, [run("team", "blue", "T1"), run("team", "red", "BLG"),
+                                     run("player_name", "blue_support", "Keria")])  # 다시 분석해서 제대로 읽음
+        game.refresh_from_db()
+        self.assertEqual((game.blue_team.acronym, game.players.get(role="support").name), ("T1", "Keria"))
+
+    @mock.patch("matches.lineups.refresh_match_headers")
+    @mock.patch("matches.ddragon.champions", return_value=CHAMPS)
+    @mock.patch("matches.ddragon.version_for", return_value="16.22.1")
+    def test_import_lineups_skips_bad_set(self, _v, _c, refresh):
+        from matches.lineups import import_lineups
+        match = save_match("https://esports.op.gg/matches/32706", MATCH)
+        responses = {1: GAME1, 2: {"teams": []}, 3: GAME | {"id": "36892"}, 4: None, 5: None}  # 2세트는 id 없음
+        with mock.patch("matches.opgg.fetch_game", side_effect=lambda mid, n: responses[n]):
+            self.assertEqual(import_lineups(match), 2)
+        self.assertEqual(refresh.call_args.args[0].number, 1)  # 가장 앞 세트부터 헤더를 다시 만든다
+        self.assertTrue(match.games.get(number=3).has_opgg_lineup())
+
+    def test_refresh_match_headers_from_set(self):
+        from matches.header import refresh_match_headers
+        from matches.models import GameVideo
+        match = save_match("https://esports.op.gg/matches/32706", MATCH)
+        g1, g2 = match.games.get(number=1), match.games.get(number=2)
+        GameVideo.objects.create(title="1", work_name="v1", game=g1)
+        GameVideo.objects.create(title="2", work_name="v2", game=g2)
+        with mock.patch("matches.header.refresh_header") as refresh:
+            refresh_match_headers(g2)
+        self.assertEqual([c.args[0].work_name for c in refresh.call_args_list], ["v2"])
+        with mock.patch("matches.header.refresh_header") as refresh:
+            refresh_match_headers(g1)  # 1세트가 바뀌면 2세트 헤더도
+        self.assertEqual(sorted(c.args[0].work_name for c in refresh.call_args_list), ["v1", "v2"])
+
+    def test_pick_version_empty(self):
+        with self.assertRaises(ValueError):
+            ddragon.pick_version([], "16.22.1")
 
     def test_pick_version(self):
         versions = ["16.23.1", "16.22.1", "16.21.2"]

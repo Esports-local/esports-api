@@ -26,8 +26,9 @@
 - `matches/` (LoL 앱: 모델·관리 명령)
   - `models.py`: Team, Match(경기, op.gg 번호), MatchGame(세트), GamePlayer(세트별 진영·포지션·선수·챔피언), GameVideo(세트 영상 = 스펙의 games, analyzer 결과 JSON 통째로), Short(숏폼: key·구간·상태·저장소 key·렌더 시간·시도 횟수), LineReview(대사 검수: 고친 문장·O/X. 결과와 따로 둬서 재분석해도 남음, 검수 때 ASR 원문과 지금 원문이 다르면 안 씀)
   - `opgg.py`: 경기는 op.gg 경기 페이지 안 JSON(`__NEXT_DATA__`), 세트별 진영·선수·챔피언 번호·밴은 op.gg 화면이 쓰는 `/matches/graphql`의 `GetGameByMatch`(필요한 필드만, 세트당 한 번). op.gg 내부 API 는 이 하나만 쓴다. `ddragon.py`: 챔피언 번호 → 영어·한국어 이름·스킬 이름 (Riot Data Dragon, 경기 패치 버전)
-  - `lineups.py`: op.gg 세트 정보 → MatchGame(블루/레드·승자·밴 `bans`) + GamePlayer. `import_match`와 `POST /games`(세트에 선수가 없을 때)가 같이 씀
-  - `header.py`: `GameVideo.header` = 숏폼·자막 교정 때 쓰는 경기 기본 정보 (경기·팀·선수·챔피언·스킬·밴, 시리즈 스코어·이전 세트 밴픽·피어리스로 못 쓰는 챔피언). op.gg·Data Dragon 만 쓰고 사람·LLM 입력 없음. 영상 등록, 분석 끝(`save_video`), `import_outputs`, `import_match`(세트 영상 전부) 때 자동으로 다시 만든다. API 응답에는 아직 안 나감
+  - `lineups.py`: op.gg 세트 정보 → MatchGame(블루/레드·승자·밴 `bans`) + GamePlayer. `import_match`와 `POST /games`(세트에 op.gg 선수가 없을 때 = `MatchGame.has_opgg_lineup()`)가 같이 씀. 세트 하나의 응답이 이상하면 그 세트만 건너뛰고, 호출하는 쪽은 `LINEUP_ERRORS`를 잡아 경고만 남긴다
+  - `header.py`: `GameVideo.header` = 숏폼·자막 교정 때 쓰는 경기 기본 정보 (경기·팀·선수·챔피언·스킬·밴, 시리즈 스코어·이전 세트 밴픽·피어리스로 못 쓰는 챔피언). op.gg·Data Dragon 만 쓰고 사람·LLM 입력 없음. 피어리스는 `FEARLESS_LEAGUES`(LCK·LPL·MSI·Worlds)의 2025년 이후 경기만. 영상 등록, 분석 끝(`save_video`), `import_outputs`, `import_match` 때 그 세트와 뒤 세트 영상 헤더를 자동으로 다시 만든다. API 응답에는 아직 안 나감
+  - 화면 OCR(`outputs.fill_game_from_screen`)은 op.gg 값(챔피언이 있는 선수, op.gg 세트 정보가 있는 세트의 팀)을 덮지 않고, 예전 OCR 값은 새 OCR 값으로 바꾼다
   - `outputs.py`: analyzer 결과 폴더 → GameVideo 저장 (`jobs.py`와 `import_outputs`가 같이 씀). `screen.py`: roi_ocr 구간 → 대사 시점 화면 정보 (잡음 구간 제외, 안 바뀌는 값은 가장 오래 뜬 값)
   - 관리 명령: `init_storage`(MinIO 버킷 준비, compose 가 띄울 때 실행), `import_match <op.gg 번호|주소>`(경기·세트 + 세트별 블루/레드 팀·선수·챔피언, 선수 한글 표기 `name_ko`는 안 건드림), `import_outputs <analyzer 결과 이름> --title --lang --match --set` (op.gg 로 못 채운 팀·선수 칸만 화면 OCR 로 채움)
 - `config/`: 설정·`urls.py`, `storage.py`(MinIO/S3, `/health`·재생 주소·`init_storage`가 같이 씀)

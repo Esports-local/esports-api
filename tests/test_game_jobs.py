@@ -44,6 +44,22 @@ class GameJobTest(TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("고를 수 없는 영상", r.json()["error"])
 
+    def test_create_fetches_lineup_when_only_screen_names(self):
+        from matches.management.commands.import_match import save_match
+        from matches.models import GamePlayer
+        from tests.test_matches import MATCH
+        match = save_match("https://esports.op.gg/matches/32706", MATCH)
+        GamePlayer.objects.create(game=match.games.get(number=2), side="blue", role="support", name="Kerla")  # OCR
+        body = {"video": "game_1080.mp4", "match": 32706, "set": 2}
+        with mock.patch("api.games.views.import_lineups") as imp:
+            r = self.client.post("/games", body, content_type="application/json")
+        self.assertEqual(r.status_code, 201)
+        imp.assert_called_once()  # 챔피언 없는 선수만 있으면 op.gg 세트 정보를 받는다
+        GameVideo.objects.update(analyze_status="failed")  # 다시 등록할 수 있게
+        with mock.patch("api.games.views.import_lineups", side_effect=KeyError("id")):
+            r = self.client.post("/games", body, content_type="application/json")
+        self.assertEqual(r.status_code, 201)  # op.gg 응답이 이상해도 등록은 된다
+
     def test_create_start_and_finish(self):
         r = self.client.post("/games", {"video": "game_1080.mp4", "title": "테스트", "language": "ko"},
                              content_type="application/json")

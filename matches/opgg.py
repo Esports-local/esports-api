@@ -88,7 +88,7 @@ def games_from_videos(match: dict) -> dict[int, dict]:
     return games
 
 
-def fetch_game(match_id: int | str, set_number: int, timeout: float = 20) -> dict | None:
+def fetch_game(match_id: int | str, set_number: int, timeout: float = 10) -> dict | None:
     """세트 하나의 gameByMatch JSON. 열리지 않은 세트(3:1 로 끝난 BO5 의 5세트 등)는 None.
 
     Raises:

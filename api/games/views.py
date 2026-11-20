@@ -2,7 +2,6 @@
 
 import logging
 
-import requests
 from django.db import transaction
 from django.http import Http404
 from drf_spectacular.utils import extend_schema
@@ -13,7 +12,7 @@ from api.exceptions import ApiError, get_or_404
 from api.games import analyzer, jobs, reviews
 from matches import opgg
 from matches.header import refresh_header
-from matches.lineups import import_lineups
+from matches.lineups import LINEUP_ERRORS, import_lineups
 from matches.management.commands.import_match import save_match
 from matches.models import GameVideo, LineReview, Match, MatchGame, Role
 from matches.screen import filter_runs, snapshot, static_values
@@ -125,11 +124,11 @@ def _match_game(data) -> MatchGame | None:
             raise ApiError(f"op.gg 경기 {match_no} 를 가져오지 못했습니다: {e}", 502) from e
         save_match(url, d)
     game = MatchGame.objects.filter(match__opgg_id=match_no, number=set_no).first()
-    if game is None or not game.players.exists():
+    if game is None or not game.has_opgg_lineup():  # OCR 로 이름만 채운 세트도 op.gg 로 다시 받는다
         try:
             import_lineups(Match.objects.get(opgg_id=match_no))
-        except (ValueError, OSError, requests.RequestException) as e:
-            log.warning("op.gg 세트 정보를 가져오지 못했습니다 (%s): %s", match_no, e)
+        except LINEUP_ERRORS as e:
+            log.warning("op.gg 세트 정보를 가져오지 못했습니다 (%s): %r", match_no, e)
         game = MatchGame.objects.filter(match__opgg_id=match_no, number=set_no).first()
     if game is None:
         raise ApiError(f"경기 {match_no} 에 {set_no}세트가 없습니다", 404)

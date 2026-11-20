@@ -7,13 +7,12 @@
 세트에 붙은 영상의 헤더(GameVideo.header)도 다시 만든다. 선수 한글 표기(name_ko)는 건드리지 않는다.
 """
 
-import requests
 from django.core.management.base import BaseCommand, CommandError
 from django.db import transaction
 from django.utils.dateparse import parse_datetime
 
 from matches import opgg
-from matches.lineups import import_lineups
+from matches.lineups import LINEUP_ERRORS, import_lineups
 from matches.models import Match, MatchGame, Team
 
 
@@ -32,9 +31,9 @@ class Command(BaseCommand):
             match = save_match(url, data)
             try:
                 lineups = import_lineups(match)
-            except (ValueError, OSError, requests.RequestException) as e:
+            except LINEUP_ERRORS as e:
                 lineups = 0
-                self.stderr.write(self.style.WARNING(f"{match.opgg_id}: 세트별 선수·챔피언을 가져오지 못했습니다: {e}"))
+                self.stderr.write(self.style.WARNING(f"{match.opgg_id}: 세트별 선수·챔피언을 가져오지 못했습니다: {e!r}"))
             games = ", ".join(f"{g.number}세트({g.opgg_game_id})" for g in match.games.all())
             self.stdout.write(self.style.SUCCESS(
                 f"{match.opgg_id} {match.name} | {match.home_team} {match.home_score}:{match.away_score} "
