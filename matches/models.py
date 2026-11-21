@@ -120,7 +120,6 @@ class GameVideo(models.Model):
     job_id = models.CharField(max_length=100, blank=True)  # 진행 중이거나 마지막 analyzer 작업
     error = models.TextField(blank=True)  # 마지막 작업이 실패한 이유
     duration = models.FloatField(null=True, blank=True)
-    hls_key = models.CharField(max_length=500, blank=True)
     analyze_status = models.CharField(max_length=10, choices=AnalyzeStatus.choices, default=AnalyzeStatus.PENDING)
     run_log = models.JSONField(default=list, blank=True)  # work/run_log.json
     results = models.JSONField(default=dict, blank=True)  # {stage: work/<stage>.json 전체}

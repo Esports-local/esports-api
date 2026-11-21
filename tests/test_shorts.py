@@ -100,7 +100,7 @@ class ShortsTest(TestCase):
     def test_bad_requests(self, _src):
         for body, msg in [({}, "event_ids"), ({"event_ids": [99]}, "없는 이벤트"), ({"event_ids": [1, 2, 3, 4, 5, 6]}, "5개"),
                           ({"event_ids": [1], "subtitles": "jp"}, "subtitles"), ({"event_ids": [1], "pre_sec": 30}, "pre_sec"),
-                          ({"event_ids": [1], "subtitles": "en"}, "번역 결과")]:
+                          ({"event_ids": [1], "subtitles": "en"}, "subtitles")]:
             res = self.post(body)
             self.assertEqual(res.status_code, 400, body)
             self.assertIn(msg, res.json()["error"])

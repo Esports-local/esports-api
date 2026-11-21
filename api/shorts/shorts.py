@@ -22,7 +22,7 @@ from matches.models import GameVideo, Short, ShortStatus
 from matches.outputs import OUTPUTS_ROOT
 
 EVENT_TYPES = ("kill", "tower", "objective")
-SUBTITLES = ("ko", "en", "none")
+SUBTITLES = ("ko", "none")
 PRE_SEC, POST_SEC, MAX_PAD = 6.0, 4.0, 15.0
 MAX_EVENTS = 5
 TYPE_LABEL = {"kill": "킬", "tower": "타워", "objective": "오브젝트"}
@@ -71,18 +71,12 @@ def title_for(v: GameVideo, picked: list[dict]) -> str:
 
 
 def subtitle_lines(v: GameVideo, mode: str, segments: list[dict]) -> list[dict]:
-    """구간에 걸친 대사 [{start_sec, end_sec, text}]. ko 는 검수로 고친 문장 우선, en 은 번역 조건 B."""
+    """구간에 걸친 대사 [{start_sec, end_sec, text}]. 검수로 고친 문장 우선."""
     if mode == "none":
         return []
     lines = (v.results.get("asr") or {}).get("result", {}).get("lines", [])
-    if mode == "ko":
-        fixed = reviews.text_overrides(v)
-        texts = {ln["id"]: fixed.get(str(ln["id"]), ln["text"]) for ln in lines}
-    else:
-        tr = (v.results.get("translate") or {}).get("result", {}).get("lines", {})
-        if not tr:
-            raise ApiError("번역 결과가 없습니다 (en 자막은 translate 단계 뒤에 만들 수 있습니다)")
-        texts = {ln["id"]: (tr.get(str(ln["id"])) or {}).get("B") or "" for ln in lines}
+    fixed = reviews.text_overrides(v)
+    texts = {ln["id"]: fixed.get(str(ln["id"]), ln["text"]) for ln in lines}
     return [{"start_sec": ln["start_sec"], "end_sec": ln["end_sec"], "text": texts[ln["id"]]}
             for ln in lines if texts[ln["id"]] and any(
                 ln["end_sec"] > s["start_sec"] and ln["start_sec"] < s["end_sec"] for s in segments)]

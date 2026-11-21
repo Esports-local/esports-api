@@ -7,7 +7,7 @@ from api.games import analyzer
 from matches.models import AnalyzeStatus, GameVideo
 from matches.outputs import save_video, work_dir
 
-DEFAULT_STAGES = ["header", "preprocess", "roi_ocr", "asr"]  # header 는 경기·세트가 있을 때만
+DEFAULT_STAGES = ["header", "preprocess", "segments", "roi_ocr", "asr"]  # header 는 경기·세트가 있을 때만
 
 
 def source_for(v: GameVideo) -> str:

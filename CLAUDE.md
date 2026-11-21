@@ -17,7 +17,7 @@
 ## 구조
 - `api/`: ui 에 주는 엔드포인트. 엔드포인트마다 폴더 하나 (`views.py` + 그 엔드포인트만 쓰는 파일). 앱(`matches`)과 관리 명령은 `api`를 import 하지 않는다
   - 공통: `views.py`(`/health`), `exceptions.py`(에러 형식 `{"error": "메시지"}`, `get_or_404`)
-  - `games/` (LoL, `/games`, `/sources`): `views.py` 스펙 1~5번 조회(4번 `/lines`는 대사 + 화면 정보 + 검수, 번역 없음), 8~10·12번 `POST /games`(영상 등록 + 분석), `/analyze`(단계 다시 실행), `/cancel`, `GET /sources`, 13번 `POST /games/{id}/lines/{line_id}/review`(원문 검수). 번역(조건 A/B/C, 11번 `/estimate`)은 쓰지 않아 뺐다 (analyzer `translate` 코드는 남아 있음). 6·7번 `/cases`는 evaluate 단계 후
+  - `games/` (LoL, `/games`, `/sources`): `views.py` 스펙 1~5번 조회(4번 `/lines`는 대사 + 화면 정보 + 검수, 번역 없음), 8~10·12번 `POST /games`(영상 등록 + 분석), `/analyze`(단계 다시 실행), `/cancel`, `GET /sources`, 13번 `POST /games/{id}/lines/{line_id}/review`(원문 검수). 번역(조건 A/B/C, 11번 `/estimate`)은 뺐다 (analyzer 코드도 지움). 6·7번 `/cases`는 evaluate 단계 후
   - `shorts/` (14~17번 `/games/{id}/events`, `/games/{id}/shorts`, `/shorts/{id}`): `shorts.py` 이벤트 → 구간(앞 6초·뒤 4초, 겹치면 합침), key = 입력(timeline 버전·구간·자막 문장·제목) 해시라 같은 요청은 같은 행(`Short.key` unique, 다시 렌더 안 함). 렌더는 analyzer `POST /shorts`, 조회할 때 상태를 묻고 끝나면 `/outputs`의 mp4 를 저장소 `shorts/<key>.mp4`(공개 읽기)로 올린다. analyzer 가 기록을 잃으면(404) 다시 맡기고, 실패한 숏폼은 같은 요청으로 다시 렌더
     - `analyzer.py`: analyzer HTTP 호출 (`MAIN_URL`, 스펙은 `../esports-analyzer/api/*/schemas.py`). `jobs.py`: 작업 시작, 조회할 때 상태 갱신, 끝나면 `matches/outputs.py`로 결과 저장
     - `reviews.py`: 대사 검수(LineReview)를 `/lines`에 붙이고, 고친 문장을 숏폼 ko 자막에 쓴다 (`text_overrides`)

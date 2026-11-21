@@ -8,7 +8,7 @@ from django.db import transaction
 
 from matches.models import AnalyzeStatus, GameVideo
 
-STAGES = ["header", "preprocess", "segments", "roi_ocr", "asr", "translate", "timeline", "evaluate"]
+STAGES = ["header", "preprocess", "segments", "roi_ocr", "asr", "timeline", "evaluate"]
 OUTPUTS_ROOT = Path(os.environ.get("ANALYZER_OUTPUTS_IN_CONTAINER", "/outputs"))
 
 

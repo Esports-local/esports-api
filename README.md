@@ -16,7 +16,6 @@ LoL 중계 번역 실험의 백엔드 (Django + DRF). 경기 정보(op.gg), 세�
 | 8 | POST | `/games` | 원본 영상(1920x1080) 등록 + 분석 시작 |
 | 9 | POST | `/games/{id}/analyze` | 단계 추가 실행 (예: 번역) |
 | 10 | POST | `/games/{id}/cancel` | 분석 중지 |
-| 11 | GET | `/games/{id}/estimate?conditions=A,B` | 번역 예상 입력 토큰 |
 | 12 | GET | `/sources` | 원본 영상 목록 (`VIDEOS_DIR`) |
 | 13 | POST | `/games/{id}/lines/{line_id}/review` | 대사 검수: `text`(고친 문장)·`reviewed`(O/X) 중 하나 이상. 고친 문장은 번역·예상 비용 계산 때 ASR 원문 대신 쓴다 |
 | 14 | GET | `/games/{id}/events?type=&player=` | 경기 이벤트(킬·타워·오브젝트, analyzer timeline) + 이벤트마다 숏폼 기본 구간 `clip` |

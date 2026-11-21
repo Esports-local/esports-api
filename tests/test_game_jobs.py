@@ -72,7 +72,7 @@ class GameJobTest(TestCase):
         v = GameVideo.objects.get(work_name="game_1080")
         self.assertEqual((v.title, v.video_name, v.analyze_status), ("테스트", "game_1080.mp4", "running"))
         args = self.mocks[1].call_args.args
-        self.assertEqual((args[1], args[2]), ("game_1080.mp4", ["preprocess", "roi_ocr", "asr"]))
+        self.assertEqual((args[1], args[2]), ("game_1080.mp4", ["preprocess", "segments", "roi_ocr", "asr"]))
 
         # 다시 시작하면 409
         r = self.client.post(f"/games/{v.id}/analyze", {"stages": ["asr"]}, content_type="application/json")

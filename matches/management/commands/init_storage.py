@@ -8,7 +8,7 @@ from config import storage
 
 
 class Command(BaseCommand):
-    help = "버킷(S3_BUCKET)이 없으면 만들고 hls/ 공개 읽기 정책을 건다. 저장소가 뜰 때까지 잠시 재시도한다."
+    help = "버킷(S3_BUCKET)이 없으면 만들고 shorts/ 공개 읽기 정책을 건다. 저장소가 뜰 때까지 잠시 재시도한다."
 
     def add_arguments(self, parser):
         parser.add_argument("--wait", type=float, default=30, help="저장소 대기 최대 초 (기본 30)")

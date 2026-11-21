@@ -41,7 +41,7 @@ services:
       - api
 
   analyzer:
-    # 분석 파이프라인 (esports-analyzer). 영상 목록 /videos, 분석 작업 /jobs, 번역 예상 /estimate
+    # 분석 파이프라인 (esports-analyzer). 영상 목록 /videos, 분석 작업 /jobs, 숏폼 렌더 /shorts
     image: esports-analyzer
     build: ../esports-analyzer
     env_file:
@@ -81,7 +81,7 @@ services:
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY:-minioadmin}
       MINIO_ROOT_PASSWORD: ${S3_SECRET_KEY:-minioadmin}
-      MINIO_API_CORS_ALLOW_ORIGIN: "*"  # ui(hls.js)가 브라우저에서 직접 재생
+      MINIO_API_CORS_ALLOW_ORIGIN: "*"  # 브라우저가 숏폼 mp4 를 직접 재생
     ports:
       - "9000:9000"  # S3 API
       - "9001:9001"  # 웹 콘솔
