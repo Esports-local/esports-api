@@ -1,7 +1,5 @@
 """/games·/sources 엔드포인트 (스펙 시트 spec_sheet_lol 1~5번, 8~13번)."""
 
-import logging
-
 from django.db import transaction
 from django.http import Http404
 from drf_spectacular.utils import extend_schema
@@ -10,23 +8,17 @@ from rest_framework.response import Response
 
 from api.exceptions import ApiError, get_or_404
 from api.games import analyzer, jobs, reviews
-from matches import opgg
-from matches.header import refresh_header
-from matches.lineups import LINEUP_ERRORS, import_lineups
-from matches.management.commands.import_match import save_match
-from matches.models import GameVideo, LineReview, Match, MatchGame, Role
+from matches.models import GameVideo, LineReview
 from matches.screen import filter_runs, snapshot, static_values
 
-log = logging.getLogger(__name__)
 GAME_NOT_FOUND = "영상을 찾을 수 없습니다"
-STAGES = ["preprocess", "segments", "hls", "roi_ocr", "asr", "translate", "timeline", "evaluate"]
-RUNNABLE = ["preprocess", "roi_ocr", "asr", "translate", "timeline"]  # ui 에서 고를 수 있는 단계
-ROLE_ORDER = [r.value for r in Role]
+STAGES = ["header", "preprocess", "segments", "hls", "roi_ocr", "asr", "timeline", "evaluate"]
+RUNNABLE = ["header", "preprocess", "roi_ocr", "asr", "timeline"]  # ui 에서 고를 수 있는 단계 (번역은 쓰지 않음)
+ROLE_ORDER = ["top", "jungle", "mid", "bot", "support"]
 
 
 def _video(pk: int) -> GameVideo:
-    return get_or_404(GameVideo.objects.select_related("game__match", "game__blue_team", "game__red_team"),
-                      pk, GAME_NOT_FOUND)
+    return get_or_404(GameVideo.objects, pk, GAME_NOT_FOUND)
 
 
 def _stage(v: GameVideo, stage: str, message: str) -> dict:
@@ -37,30 +29,30 @@ def _stage(v: GameVideo, stage: str, message: str) -> dict:
 
 
 def _teams(v: GameVideo):
-    g = v.game
-    if not g or not (g.blue_team and g.red_team):
+    t = v.header.get("teams") or {}
+    if not (t.get("blue") and t.get("red")):
         return None
-    return {"blue": g.blue_team.acronym, "red": g.red_team.acronym}
+    return {"blue": t["blue"]["name"], "red": t["red"]["name"]}
 
 
 def _match(v: GameVideo):
-    g = v.game
-    if not g:
+    """2번 응답의 경기 정보. analyzer 가 만든 헤더(GameVideo.header)를 응답 모양으로 옮기기만 한다."""
+    h = v.header
+    if not h.get("match"):
         return None
-    m = g.match
-    winner = None
-    if g.winner_id:
-        winner = "blue" if g.winner_id == g.blue_team_id else "red"
+    m = h["match"]
     sides = {}
-    for side, team in (("blue", g.blue_team), ("red", g.red_team)):
-        players = {p.role: {"name": p.name, "champion": p.champion or None, "champion_ko": p.champion_ko or None}
-                   for p in g.players.all() if p.side == side}
-        sides[side] = {"team": team.acronym if team else None,
+    for side in ("blue", "red"):
+        players = {p["role"]: {"name": p["name"], "champion": (p.get("champion") or {}).get("name") or None,
+                               "champion_ko": (p.get("champion") or {}).get("ko") or None}
+                   for p in h.get("players", []) if p["side"] == side}
+        sides[side] = {"team": ((h.get("teams") or {}).get(side) or {}).get("name"),
                        "players": {r: players[r] for r in ROLE_ORDER if r in players}}
-    return {"opgg_id": m.opgg_id, "name": m.name, "tournament": f"{m.league} {m.year or ''}".strip(),
-            "stage": m.stage, "date": m.begin_at.isoformat() if m.begin_at else None, "game": g.number,
-            "score": {m.home_team.acronym: m.home_score, m.away_team.acronym: m.away_score},
-            "winner": winner, "video_url": g.full_video_url or None, "source_url": m.source_url, **sides}
+    return {"opgg_id": m.get("opgg_id"), "name": m.get("name"),
+            "tournament": f"{m.get('league') or ''} {m.get('year') or ''}".strip(), "stage": m.get("stage"),
+            "date": m.get("begin_at"), "game": m.get("set"), "score": m.get("score"),
+            "winner": (h.get("result") or {}).get("winner"), "video_url": m.get("video_url"),
+            "source_url": m.get("source_url"), **sides}
 
 
 def _stages(v: GameVideo):
@@ -98,18 +90,8 @@ def _stage_list(raw) -> list[str]:
     return [s for s in RUNNABLE if s in stages]
 
 
-def _translate_params(data) -> dict:
-    conds = data.get("conditions")
-    if conds is None:
-        return {}
-    if not isinstance(conds, list) or not conds or set(conds) - {"A", "B", "C"}:
-        raise ApiError("conditions 는 A, B, C 중에서 고릅니다")
-    return {"translate": {"conditions": conds}}
-
-
-def _match_game(data) -> MatchGame | None:
-    """요청의 match(op.gg 번호)·set 으로 세트를 찾는다. 경기가 없으면 op.gg 에서 가져온다.
-    세트에 선수가 없으면 op.gg 세트 정보(선수·챔피언·밴)도 받는다 (실패해도 등록은 계속)."""
+def _match_set(data) -> tuple[int, int] | None:
+    """요청의 match(op.gg 경기 번호)·set. 둘 다 없으면 None. 경기 정보는 analyzer header 단계가 만든다."""
     match_no, set_no = data.get("match"), data.get("set")
     if match_no in (None, "") and set_no in (None, ""):
         return None
@@ -117,22 +99,9 @@ def _match_game(data) -> MatchGame | None:
         match_no, set_no = int(match_no), int(set_no)
     except (TypeError, ValueError) as e:
         raise ApiError("match 와 set 은 숫자여야 합니다") from e
-    if not Match.objects.filter(opgg_id=match_no).exists():
-        try:
-            url, d = opgg.fetch_match(str(match_no))
-        except (ValueError, OSError) as e:
-            raise ApiError(f"op.gg 경기 {match_no} 를 가져오지 못했습니다: {e}", 502) from e
-        save_match(url, d)
-    game = MatchGame.objects.filter(match__opgg_id=match_no, number=set_no).first()
-    if game is None or not game.has_opgg_lineup():  # OCR 로 이름만 채운 세트도 op.gg 로 다시 받는다
-        try:
-            import_lineups(Match.objects.get(opgg_id=match_no))
-        except LINEUP_ERRORS as e:
-            log.warning("op.gg 세트 정보를 가져오지 못했습니다 (%s): %r", match_no, e)
-        game = MatchGame.objects.filter(match__opgg_id=match_no, number=set_no).first()
-    if game is None:
-        raise ApiError(f"경기 {match_no} 에 {set_no}세트가 없습니다", 404)
-    return game
+    if match_no <= 0 or set_no <= 0:
+        raise ApiError("match 와 set 은 1 이상입니다")
+    return match_no, set_no
 
 
 @extend_schema(methods=["GET"], tags=["games"], summary="1. 세트 영상 목록")
@@ -140,7 +109,7 @@ def _match_game(data) -> MatchGame | None:
 @api_view(["GET", "POST"])
 def game_list(request):
     if request.method == "GET":
-        qs = GameVideo.objects.select_related("game__blue_team", "game__red_team")
+        qs = GameVideo.objects.all()
         for v in qs:
             jobs.refresh(v)
         return Response([_summary(v) for v in qs])
@@ -156,18 +125,20 @@ def game_list(request):
     if language not in ("ko", "en"):
         raise ApiError("language 는 ko 또는 en 입니다")
     stages = _stage_list(data.get("stages"))
-    params = _translate_params(data)
-    game = _match_game(data)
+    match_set = _match_set(data)
+    if match_set and "header" not in stages:  # 경기·세트를 주면 경기 정보부터 만든다
+        stages = ["header", *stages]
     work_name = name.rsplit(".", 1)[0]
     with transaction.atomic():
         v, _ = GameVideo.objects.get_or_create(work_name=work_name, defaults={"title": work_name})
         if v.analyze_status == "running":
             raise ApiError("이미 분석 중입니다", 409)
         v.title = (data.get("title") or "").strip() or v.title
-        v.language, v.video_name, v.game = language, name, game or v.game
+        v.language, v.video_name = language, name
+        if match_set:
+            v.opgg_match, v.set_number = match_set
         v.save()
-    refresh_header(v)
-    jobs.start(v, stages, params)
+    jobs.start(v, stages)
     return Response(_detail(v, None), status=201)
 
 
@@ -179,12 +150,12 @@ def game_detail(request, pk: int):
     return Response(_detail(v, job))
 
 
-@extend_schema(tags=["games"], summary="9. 단계 추가 실행 (예: 번역)")
+@extend_schema(tags=["games"], summary="9. 단계 다시 실행")
 @api_view(["POST"])
 def game_analyze(request, pk: int):
     v = _video(pk)
     jobs.refresh(v)
-    jobs.start(v, _stage_list(request.data.get("stages")), _translate_params(request.data))
+    jobs.start(v, _stage_list(request.data.get("stages")))
     return Response(_detail(v, None), status=202)
 
 
@@ -195,16 +166,6 @@ def game_cancel(request, pk: int):
     if v.analyze_status == "running" and v.job_id:
         analyzer.cancel_job(v.job_id)
     return Response(_detail(v, jobs.refresh(v)))
-
-
-@extend_schema(tags=["games"], summary="11. 번역 예상 입력 토큰")
-@api_view(["GET"])
-def game_estimate(request, pk: int):
-    v = _video(pk)
-    conds = [c for c in request.query_params.get("conditions", "A,B").split(",") if c]
-    if not conds or set(conds) - {"A", "B", "C"}:
-        raise ApiError("conditions 는 A, B, C 중에서 고릅니다")
-    return Response(analyzer.estimate(jobs.source_for(v), conds, reviews.text_overrides(v)))
 
 
 @extend_schema(tags=["games"], summary="12. 고를 수 있는 원본 영상 목록")
@@ -242,14 +203,13 @@ def _float_param(request, name):
         raise ApiError(f"{name} 는 숫자여야 합니다") from e
 
 
-@extend_schema(tags=["games"], summary="4. 해설 대사 + 화면 정보 + 조건별 번역")
+@extend_schema(tags=["games"], summary="4. 해설 대사 + 화면 정보 + 검수")
 @api_view(["GET"])
 def game_lines(request, pk: int):
     v = _video(pk)
     lines = _stage(v, "asr", "대사 분석 결과가 없습니다")["lines"]
     runs = (v.results.get("roi_ocr") or {}).get("result", {}).get("runs", [])
     statics = static_values(runs)
-    translations = ((v.results.get("translate") or {}).get("result") or {}).get("lines", {})
     lo, hi = _float_param(request, "from_sec"), _float_param(request, "to_sec")
     checked = reviews.current(v, lines)
     out = []
@@ -260,7 +220,6 @@ def game_lines(request, pk: int):
         out.append({"id": line["id"], "start_sec": line["start_sec"], "end_sec": line["end_sec"],
                     "language": line.get("language"), "text": line["text"],
                     "screen": snapshot(runs, mid, statics) if runs else {},
-                    "translations": translations.get(str(line["id"])),
                     "review": reviews.as_json(checked.get(line["id"]))})
     return Response(out)
 

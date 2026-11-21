@@ -1,10 +1,10 @@
-"""경기 정보 (e스포츠). op.gg 경기 페이지에서 가져온다 (manage.py import_match).
+"""세트 영상과 분석 결과 저장 (LoL). api 는 analyzer 가 만든 결과를 저장하고 돌려주기만 한다.
 
-- Team: 팀. op.gg 팀 id 로 구분
-- Match: 경기 (BO3/BO5 하나). op.gg 경기 번호로 구분
-- MatchGame: 세트. 영상 하나가 세트 하나에 대응한다
-- GamePlayer: 세트별 진영·포지션·선수·챔피언. import_match 가 op.gg 세트 정보(GetGameByMatch)로 채우고,
-  못 채운 칸만 import_outputs 가 화면 OCR 로 채운다. 선수 한글 표기(name_ko)는 직접 입력
+- GameVideo: 세트 영상 하나. analyzer 단계 결과(work/<stage>.json)와 경기 기본 정보(header)를 통째로 저장
+- LineReview: 대사 원문 사람 검수
+- Short: 숏폼
+- Team·Match·MatchGame·GamePlayer: 예전에 api 가 op.gg 에서 직접 채우던 표. 경기 정보는 이제 analyzer header
+  단계가 만들어 GameVideo.header 에 들어가므로 더 이상 채우지 않는다 (지울지 결정 전까지 남겨 둠)
 """
 
 from django.db import models
@@ -81,10 +81,6 @@ class MatchGame(models.Model):
     def __str__(self):
         return f"{self.match} {self.number}세트"
 
-    def has_opgg_lineup(self) -> bool:
-        """op.gg 세트 정보로 선수가 채워졌는지. 챔피언은 op.gg 에서만 오므로 챔피언이 있는 선수가 있으면 op.gg 값."""
-        return self.players.exclude(champion="").exists()
-
 
 class GamePlayer(models.Model):
     game = models.ForeignKey(MatchGame, on_delete=models.CASCADE, related_name="players")
@@ -128,7 +124,9 @@ class GameVideo(models.Model):
     analyze_status = models.CharField(max_length=10, choices=AnalyzeStatus.choices, default=AnalyzeStatus.PENDING)
     run_log = models.JSONField(default=list, blank=True)  # work/run_log.json
     results = models.JSONField(default=dict, blank=True)  # {stage: work/<stage>.json 전체}
-    header = models.JSONField(default=dict, blank=True)  # 경기 기본 정보 (matches/header.py, 세트가 있을 때 자동)
+    opgg_match = models.PositiveIntegerField(null=True, blank=True)  # op.gg 경기 번호 (영상 등록 때 받아 analyzer header 단계에 넘김)
+    set_number = models.PositiveIntegerField(null=True, blank=True)  # 세트 번호
+    header = models.JSONField(default=dict, blank=True)  # analyzer work/header.json 의 result (경기 기본 정보)
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:

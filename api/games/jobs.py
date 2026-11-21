@@ -3,11 +3,11 @@
 import time
 
 from api.exceptions import ApiError
-from api.games import analyzer, reviews
+from api.games import analyzer
 from matches.models import AnalyzeStatus, GameVideo
 from matches.outputs import save_video, work_dir
 
-DEFAULT_STAGES = ["preprocess", "roi_ocr", "asr"]
+DEFAULT_STAGES = ["header", "preprocess", "roi_ocr", "asr"]  # header 는 경기·세트가 있을 때만
 
 
 def source_for(v: GameVideo) -> str:
@@ -38,11 +38,13 @@ def start(v: GameVideo, stages: list[str], params: dict | None = None) -> GameVi
     source = next((s for s in analyzer.list_videos() if s["name"] == name), None)
     if source is None or not source["selectable"]:
         raise ApiError(f"분석할 수 없는 영상입니다: {(source or {}).get('reason') or name}")
-    if "translate" in stages:  # 사람이 고친 대사는 ASR 원문 대신 고친 문장으로 번역한다
-        overrides = reviews.text_overrides(v)
-        if overrides:
-            params = {**(params or {})}
-            params["translate"] = {**params.get("translate", {}), "text_overrides": overrides}
+    if "header" in stages:  # 경기 정보는 analyzer 가 op.gg 에서 만든다. 경기·세트를 모르면 뺀다
+        if v.opgg_match and v.set_number:
+            params = {**(params or {}), "header": {"match": v.opgg_match, "set": v.set_number}}
+        else:
+            stages = [s for s in stages if s != "header"]
+            if not stages:
+                raise ApiError("경기 정보(header)를 만들려면 영상에 op.gg 경기 번호와 세트가 있어야 합니다")
     job_id = f"game{v.id}-{int(time.time())}"
     analyzer.start_job(job_id, name, stages, params)
     v.job_id, v.error, v.analyze_status = job_id, "", AnalyzeStatus.RUNNING
@@ -74,7 +76,7 @@ def refresh(v: GameVideo) -> dict | None:
 
 def _finish(v: GameVideo, error: str) -> None:
     """결과 폴더를 다시 읽어 저장한다. error 가 있으면 failed."""
-    saved = save_video(work_dir(v.work_name), v.work_name, v.title, v.language, v.game, video_name=v.video_name)
+    saved = save_video(work_dir(v.work_name), v.work_name, v.title, v.language, video_name=v.video_name)
     if error:
         saved.analyze_status, saved.error = AnalyzeStatus.FAILED, error
         saved.save(update_fields=["analyze_status", "error"])

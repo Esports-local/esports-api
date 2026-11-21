@@ -28,8 +28,7 @@ class GamesTest(TestCase):
             title="테스트 세트", work_name="t", duration=100.0, analyze_status="done",
             run_log=[{"stage": "asr", "elapsed_sec": 5.0}],
             results={"roi_ocr": stage("roi_ocr", {"layout": "x.json", "sample_fps": 2.0, "runs": RUNS}),
-                     "asr": stage("asr", {"lines": LINES}),
-                     "translate": stage("translate", {"lines": {"2": {"A": "Karia", "B": "Keria", "C": "Keria"}}})})
+                     "asr": stage("asr", {"lines": LINES})})
 
     def test_list_and_detail(self):
         self.assertEqual(self.client.get("/games").json()[0]["title"], "테스트 세트")
@@ -45,13 +44,12 @@ class GamesTest(TestCase):
         self.assertEqual([r["text"] for r in runs], ["ON", "JON"])  # 1장짜리 10/0/0 은 빠짐
         self.assertEqual(self.client.get(f"/games/{self.v.id}/screen?min_samples=x").status_code, 400)
 
-    def test_lines_with_screen_and_translations(self):
+    def test_lines_with_screen(self):
         lines = self.client.get(f"/games/{self.v.id}/lines").json()
         self.assertEqual(lines[0]["screen"]["player_name"]["red_support"], "ON")  # 가장 오래 뜬 이름
         self.assertNotIn("team_kills", lines[0]["screen"])
         self.assertEqual(lines[1]["screen"]["team_kills"], {"red": "3"})
-        self.assertIsNone(lines[0]["translations"])
-        self.assertEqual(lines[1]["translations"]["B"], "Keria")
+        self.assertNotIn("translations", lines[1])  # 번역은 쓰지 않음
         self.assertEqual(len(self.client.get(f"/games/{self.v.id}/lines?from_sec=20").json()), 1)
 
     def test_analysis_and_errors(self):

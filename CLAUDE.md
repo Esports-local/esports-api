@@ -7,30 +7,27 @@
 ## 스킬 먼저 (esports-dev 플러그인)
 아래 작업은 코드를 보거나 명령을 치기 전에 해당 스킬을 먼저 부른다. 이 문서의 구조·명령만 보고 바로 하면 스킬에 적힌 순서와 같이 고칠 곳(스펙 시트, ui·analyzer)을 빠뜨린다.
 - 엔드포인트 추가, 응답·요청 모양 변경(필드·계산값·파라미터 추가 포함) → `esports-dev:add-endpoint`
-- op.gg 경기·analyzer 결과 폴더를 DB 에 넣기 (`import_match`·`import_outputs`) → `esports-dev:import-game`
+- analyzer 결과 폴더를 DB 에 넣기 (`import_outputs`) → `esports-dev:import-game`
 - 로컬 서버 띄우기·끄기·로그 → `esports-dev:local-up`
 
 ## 이 레포의 역할
-데이터 저장과 ui 제공. 경기 정보(op.gg), 세트 영상, analyzer 분석 결과를 저장하고 ui 에 돌려준다.
-분석은 analyzer 가 한다. 지금은 analyzer 결과 폴더를 관리 명령으로 읽어 넣는다 (큐 + 워커 연동은 나중).
+데이터 저장과 ui 제공만 한다. 세트 영상과 analyzer 가 만든 결과(경기 정보 header 포함)를 그대로 저장하고 ui 에 돌려준다.
+분석과 외부 데이터(op.gg·Data Dragon) 가져오기는 analyzer 가 한다. api 는 op.gg 를 부르지 않는다. 지금은 analyzer 결과 폴더를 관리 명령으로 읽어 넣는다 (큐 + 워커 연동은 나중).
 
 ## 구조
 - `api/`: ui 에 주는 엔드포인트. 엔드포인트마다 폴더 하나 (`views.py` + 그 엔드포인트만 쓰는 파일). 앱(`matches`)과 관리 명령은 `api`를 import 하지 않는다
   - 공통: `views.py`(`/health`), `exceptions.py`(에러 형식 `{"error": "메시지"}`, `get_or_404`)
-  - `games/` (LoL, `/games`, `/sources`): `views.py` 스펙 1~5번 조회, 8~12번 `POST /games`(영상 등록 + 분석), `/analyze`, `/cancel`, `/estimate`, `GET /sources`, 13번 `POST /games/{id}/lines/{line_id}/review`(대사 검수). 6·7번 `/cases`는 evaluate 단계 후
+  - `games/` (LoL, `/games`, `/sources`): `views.py` 스펙 1~5번 조회(4번 `/lines`는 대사 + 화면 정보 + 검수, 번역 없음), 8~10·12번 `POST /games`(영상 등록 + 분석), `/analyze`(단계 다시 실행), `/cancel`, `GET /sources`, 13번 `POST /games/{id}/lines/{line_id}/review`(원문 검수). 번역(조건 A/B/C, 11번 `/estimate`)은 쓰지 않아 뺐다 (analyzer `translate` 코드는 남아 있음). 6·7번 `/cases`는 evaluate 단계 후
   - `shorts/` (14~17번 `/games/{id}/events`, `/games/{id}/shorts`, `/shorts/{id}`): `shorts.py` 이벤트 → 구간(앞 6초·뒤 4초, 겹치면 합침), key = 입력(timeline 버전·구간·자막 문장·제목) 해시라 같은 요청은 같은 행(`Short.key` unique, 다시 렌더 안 함). 렌더는 analyzer `POST /shorts`, 조회할 때 상태를 묻고 끝나면 `/outputs`의 mp4 를 저장소 `shorts/<key>.mp4`(공개 읽기)로 올린다. analyzer 가 기록을 잃으면(404) 다시 맡기고, 실패한 숏폼은 같은 요청으로 다시 렌더
     - `analyzer.py`: analyzer HTTP 호출 (`MAIN_URL`, 스펙은 `../esports-analyzer/api/*/schemas.py`). `jobs.py`: 작업 시작, 조회할 때 상태 갱신, 끝나면 `matches/outputs.py`로 결과 저장
-    - `reviews.py`: 대사 검수(LineReview)를 `/lines`에 붙이고, 번역·예상 때 고친 문장을 analyzer `translate.text_overrides`로 넘긴다
+    - `reviews.py`: 대사 검수(LineReview)를 `/lines`에 붙이고, 고친 문장을 숏폼 ko 자막에 쓴다 (`text_overrides`)
   - `skills/` (`/skills`, 스펙 시트 번호 없음): 스킬별 집계, 사용 기록 `/usage`, 평가 결과 `/evals`, 테스트 요청 `/cases`(화면에서 추가, `/cases/{id}`로 정답 바꾸기·빼기 → 이미 돈 결과도 다시 판정), 평가 실행 `/evals/jobs`(`case_ids`로 일부 요청만, 실행기는 `/evals/runner`의 허용이 켜져 있을 때만 가져감), 설명 개선 시도 `/improves`(improve.py 가 보냄, 수정안만 받은 것은 `proposed`), 고칠 방법 `/fixes`(실행기가 진단해 보냄), 실행 요청 `kind`(eval·apply_line·propose·evaluate_try·commit_line), `GET /skills?compare=`로 결과 비교. 보내는 쪽은 `../dev-workflow` (훅, `evals/run.py`, `evals/worker.py`). `/cases/sync`·`/jobs/claim`·`/jobs/{id}/progress`는 실행기 전용
 - `skills/` (Claude Code 스킬 사용·선택 평가 앱. 경기 데이터와 무관): `models.py` SkillUsage(스킬 호출, 대화 내용 없음), SkillEvalRun(평가 실행 하나), SkillEvalCase(테스트 요청, 기준은 dev-workflow 의 `evals/cases`), SkillEvalJob(화면에서 요청한 평가 실행), SkillImproveTry(설명 개선 시도 하나), EvalRunner(실행기 연결 시각·평가 실행 허용, 한 줄), SkillFix(틀린 요청의 진단·고칠 방법). `stats.py` 스킬별 집계(재현율·정밀도·성공률)
 - `matches/` (LoL 앱: 모델·관리 명령)
-  - `models.py`: Team, Match(경기, op.gg 번호), MatchGame(세트), GamePlayer(세트별 진영·포지션·선수·챔피언), GameVideo(세트 영상 = 스펙의 games, analyzer 결과 JSON 통째로), Short(숏폼: key·구간·상태·저장소 key·렌더 시간·시도 횟수), LineReview(대사 검수: 고친 문장·O/X. 결과와 따로 둬서 재분석해도 남음, 검수 때 ASR 원문과 지금 원문이 다르면 안 씀)
-  - `opgg.py`: 경기는 op.gg 경기 페이지 안 JSON(`__NEXT_DATA__`), 세트별 진영·선수·챔피언 번호·밴은 op.gg 화면이 쓰는 `/matches/graphql`의 `GetGameByMatch`(필요한 필드만, 세트당 한 번). op.gg 내부 API 는 이 하나만 쓴다. `ddragon.py`: 챔피언 번호 → 영어·한국어 이름·스킬 이름 (Riot Data Dragon, 경기 패치 버전)
-  - `lineups.py`: op.gg 세트 정보 → MatchGame(블루/레드·승자·밴 `bans`) + GamePlayer. `import_match`와 `POST /games`(세트에 op.gg 선수가 없을 때 = `MatchGame.has_opgg_lineup()`)가 같이 씀. 세트 하나의 응답이 이상하면 그 세트만 건너뛰고, 호출하는 쪽은 `LINEUP_ERRORS`를 잡아 경고만 남긴다
-  - `header.py`: `GameVideo.header` = 숏폼·자막 교정 때 쓰는 경기 기본 정보 (경기·팀·선수·챔피언·스킬·밴, 시리즈 스코어·이전 세트 밴픽·피어리스로 못 쓰는 챔피언). op.gg·Data Dragon 만 쓰고 사람·LLM 입력 없음. 피어리스는 `FEARLESS_LEAGUES`(LCK·LPL·MSI·Worlds)의 2025년 이후 경기만. 영상 등록, 분석 끝(`save_video`), `import_outputs`, `import_match` 때 그 세트와 뒤 세트 영상 헤더를 자동으로 다시 만든다. API 응답에는 아직 안 나감
-  - 화면 OCR(`outputs.fill_game_from_screen`)은 op.gg 값(챔피언이 있는 선수, op.gg 세트 정보가 있는 세트의 팀)을 덮지 않고, 예전 OCR 값은 새 OCR 값으로 바꾼다
-  - `outputs.py`: analyzer 결과 폴더 → GameVideo 저장 (`jobs.py`와 `import_outputs`가 같이 씀). `screen.py`: roi_ocr 구간 → 대사 시점 화면 정보 (잡음 구간 제외, 안 바뀌는 값은 가장 오래 뜬 값)
-  - 관리 명령: `init_storage`(MinIO 버킷 준비, compose 가 띄울 때 실행), `import_match <op.gg 번호|주소>`(경기·세트 + 세트별 블루/레드 팀·선수·챔피언, 선수 한글 표기 `name_ko`는 안 건드림), `import_outputs <analyzer 결과 이름> --title --lang --match --set` (op.gg 로 못 채운 팀·선수 칸만 화면 OCR 로 채움)
+  - `models.py`: GameVideo(세트 영상 = 스펙의 games. analyzer 결과 JSON 통째로 `results`, 경기 기본 정보 `header`, op.gg 경기 번호·세트 `opgg_match`·`set_number`), Short(숏폼: key·구간·상태·저장소 key·렌더 시간·시도 횟수), LineReview(대사 원문 검수: 고친 문장·O/X. 결과와 따로 둬서 재분석해도 남음, 검수 때 ASR 원문과 지금 원문이 다르면 안 씀). Team·Match·MatchGame·GamePlayer 는 예전에 api 가 op.gg 로 채우던 표로 이제 쓰지 않는다 (지울지 결정 전)
+  - `outputs.py`: analyzer 결과 폴더 → GameVideo 저장, 가공 없음 (`jobs.py`와 `import_outputs`가 같이 씀). `header.json`은 `GameVideo.header`에도 넣고, analyzer 가 op.gg 에서 못 받았으면(error) 이전 헤더를 둔다. 2번 응답의 `match`는 이 헤더를 응답 모양으로 옮긴 것. `screen.py`: roi_ocr 구간 → 대사 시점 화면 정보 (잡음 구간 제외, 안 바뀌는 값은 가장 오래 뜬 값)
+  - 영상 등록(`POST /games`)에 `match`·`set`을 주면 저장해 두고 analyzer 작업 맨 앞에 `header` 단계를 넣어 `{"header": {"match", "set"}}`로 넘긴다. 경기·세트를 모르는 영상의 `header` 단계는 뺀다 (`jobs.start`)
+  - 관리 명령: `init_storage`(MinIO 버킷 준비, compose 가 띄울 때 실행), `import_outputs <analyzer 결과 이름> --title --lang --match --set` (결과 폴더를 그대로 저장, `--match`·`--set`은 기록만)
 - `config/`: 설정·`urls.py`, `storage.py`(MinIO/S3, `/health`·재생 주소·`init_storage`가 같이 씀)
 - 테스트: 최상위 `tests/` (`test_matches.py`, `test_games.py` …). 실행 `docker compose exec api python manage.py test`
 - CI: `.github/workflows/ci.yml` (푸시·PR 마다 `check`, 마이그레이션 누락 확인, 테스트. 서비스 없이 sqlite)
@@ -38,7 +35,6 @@
 ```
 cp .env.example .env
 docker compose up --build              # ui :8000, api :8002 (sqlite), analyzer :8001, MinIO :9000 (콘솔 :9001)
-docker compose exec api python manage.py import_match 32706
 docker compose exec api python manage.py import_outputs words_test_1080 --title "..." --lang ko --match 32706 --set 2
 ```
 - DB 는 기본 sqlite (`db.sqlite3`, git 제외). 쓰기 요청이 겹치면 기다리도록 `transaction_mode=IMMEDIATE`. Postgres 는 `COMPOSE_PROFILES`에 `postgres`를 넣고 `DATABASE_URL`을 바꿀 때만

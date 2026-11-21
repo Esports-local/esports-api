@@ -1,9 +1,8 @@
-"""대사 검수 POST /games/{id}/lines/{line_id}/review (스펙 시트 13번)와 번역 연동."""
-
-from unittest import mock
+"""대사 검수 POST /games/{id}/lines/{line_id}/review (스펙 시트 13번)와 고친 문장(숏폼 자막)."""
 
 from django.test import TestCase
 
+from api.games import reviews
 from matches.models import GameVideo, LineReview
 
 LINES = [
@@ -58,17 +57,7 @@ class LineReviewTest(TestCase):
         self.assertIsNone(r["text"])
         self.assertEqual(LineReview.objects.get(video=self.v, line_id=2).asr_text, "티원이 승리")
 
-    def test_translate_and_estimate_use_fixed_text(self):
+    def test_text_overrides_only_fixed(self):
         self.post(2, {"text": "티원 승리"})
-        self.post(1, {"reviewed": True})  # 안 고친 대사는 넘기지 않는다
-        with mock.patch("api.games.analyzer.list_videos", return_value=[{"name": "game_1080.mp4", "selectable": True}]), \
-             mock.patch("api.games.analyzer.start_job", return_value={"status": "running"}) as start, \
-             mock.patch("api.games.analyzer.get_job", return_value={"status": "running"}):
-            r = self.client.post(f"/games/{self.v.id}/analyze", {"stages": ["translate"], "conditions": ["A"]},
-                                 content_type="application/json")
-        self.assertEqual(r.status_code, 202)
-        self.assertEqual(start.call_args.args[3],
-                         {"translate": {"conditions": ["A"], "text_overrides": {"2": "티원 승리"}}})
-        with mock.patch("api.games.analyzer.estimate", return_value={}) as est:
-            self.client.get(f"/games/{self.v.id}/estimate?conditions=A")
-        est.assert_called_once_with("game_1080.mp4", ["A"], {"2": "티원 승리"})
+        self.post(1, {"reviewed": True})  # 안 고친 대사는 빠진다
+        self.assertEqual(reviews.text_overrides(self.v), {"2": "티원 승리"})

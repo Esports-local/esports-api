@@ -44,21 +44,26 @@ class GameJobTest(TestCase):
         self.assertEqual(r.status_code, 400)
         self.assertIn("고를 수 없는 영상", r.json()["error"])
 
-    def test_create_fetches_lineup_when_only_screen_names(self):
-        from matches.management.commands.import_match import save_match
-        from matches.models import GamePlayer
-        from tests.test_matches import MATCH
-        match = save_match("https://esports.op.gg/matches/32706", MATCH)
-        GamePlayer.objects.create(game=match.games.get(number=2), side="blue", role="support", name="Kerla")  # OCR
-        body = {"video": "game_1080.mp4", "match": 32706, "set": 2}
-        with mock.patch("api.games.views.import_lineups") as imp:
-            r = self.client.post("/games", body, content_type="application/json")
+    def test_create_with_match_runs_header_first(self):
+        body = {"video": "game_1080.mp4", "match": 32706, "set": 2, "stages": ["asr"]}
+        r = self.client.post("/games", body, content_type="application/json")
         self.assertEqual(r.status_code, 201)
-        imp.assert_called_once()  # 챔피언 없는 선수만 있으면 op.gg 세트 정보를 받는다
-        GameVideo.objects.update(analyze_status="failed")  # 다시 등록할 수 있게
-        with mock.patch("api.games.views.import_lineups", side_effect=KeyError("id")):
-            r = self.client.post("/games", body, content_type="application/json")
-        self.assertEqual(r.status_code, 201)  # op.gg 응답이 이상해도 등록은 된다
+        v = GameVideo.objects.get()
+        self.assertEqual((v.opgg_match, v.set_number), (32706, 2))
+        args = self.mocks[1].call_args.args
+        self.assertEqual((args[2], args[3]), (["header", "asr"], {"header": {"match": 32706, "set": 2}}))
+        GameVideo.objects.update(analyze_status="done")
+        bad = self.client.post("/games", {**body, "set": "x"}, content_type="application/json")
+        self.assertEqual(bad.status_code, 400)
+
+    def test_header_dropped_without_match(self):
+        v = GameVideo.objects.create(title="t", work_name="game_1080", analyze_status="done")
+        r = self.client.post(f"/games/{v.id}/analyze", {"stages": ["header", "asr"]}, content_type="application/json")
+        self.assertEqual(r.status_code, 202)
+        self.assertEqual(self.mocks[1].call_args.args[2], ["asr"])  # 경기·세트를 모르면 header 는 뺀다
+        GameVideo.objects.filter(pk=v.pk).update(analyze_status="done")
+        r = self.client.post(f"/games/{v.id}/analyze", {"stages": ["header"]}, content_type="application/json")
+        self.assertEqual(r.status_code, 400)
 
     def test_create_start_and_finish(self):
         r = self.client.post("/games", {"video": "game_1080.mp4", "title": "테스트", "language": "ko"},
@@ -95,21 +100,16 @@ class GameJobTest(TestCase):
         self.assertEqual(d["analyze_status"], "failed")
         self.assertIn("다시 시작", d["error"])
 
-    def test_translate_params_and_estimate(self):
+    def test_analyze_stages(self):
         v = GameVideo.objects.create(title="t", work_name="game_1080", analyze_status="done")
-        r = self.client.post(f"/games/{v.id}/analyze", {"stages": ["translate"], "conditions": ["A", "B"]},
-                             content_type="application/json")
+        r = self.client.post(f"/games/{v.id}/analyze", {"stages": ["timeline"]}, content_type="application/json")
         self.assertEqual(r.status_code, 202)
-        self.assertEqual(self.mocks[1].call_args.args[3], {"translate": {"conditions": ["A", "B"]}})
+        self.assertEqual(self.mocks[1].call_args.args[2], ["timeline"])
         self.assertEqual(GameVideo.objects.get(pk=v.pk).video_name, "game_1080.mp4")  # work_name 으로 찾음
-        bad = self.client.post(f"/games/{v.id}/analyze", {"stages": ["translate"], "conditions": ["D"]},
-                               content_type="application/json")
-        self.assertEqual(bad.status_code, 400)
-        with mock.patch("api.games.analyzer.estimate", return_value={"model": "m", "lines": 1, "requests": 2,
-                                                                   "input_tokens": {"A": 10, "B": 20}}) as est:
-            d = self.client.get(f"/games/{v.id}/estimate?conditions=A,B").json()
-        est.assert_called_once_with("game_1080.mp4", ["A", "B"], {})
-        self.assertEqual(d["input_tokens"]["B"], 20)
+        GameVideo.objects.filter(pk=v.pk).update(analyze_status="done")
+        bad = self.client.post(f"/games/{v.id}/analyze", {"stages": ["translate"]}, content_type="application/json")
+        self.assertEqual(bad.status_code, 400)  # 번역은 실행하지 않는다
+        self.assertEqual(self.client.get(f"/games/{v.id}/estimate").status_code, 404)
 
     def test_source_for_missing(self):
         v = GameVideo.objects.create(title="t", work_name="없는영상")

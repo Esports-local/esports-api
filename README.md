@@ -51,12 +51,10 @@ Claude Code 플러그인 `esports-dev`([dev-workflow](https://github.com/Esports
 ```
 cp .env.example .env
 docker compose up --build                       # ui :8000 + api :8002 (기본 sqlite) + analyzer :8001 + MinIO
-docker compose exec api python manage.py import_match 32706          # op.gg 경기 번호
 docker compose exec api python manage.py import_outputs <결과 이름> --title "..." --lang ko --match 32706 --set 2
 docker compose exec api python manage.py test
 ```
-- `import_match`: op.gg 경기 페이지 안의 JSON만 읽어 경기·팀·세트를 저장한다 (같은 번호는 덮어씀)
-- `import_outputs`: analyzer 결과 폴더(`ANALYZER_OUTPUTS`, 기본 `../esports-analyzer/outputs`)를 읽어 세트 영상으로 저장하고, 화면 OCR로 읽은 팀·선수 이름을 세트에 채운다
+- `import_outputs`: analyzer 결과 폴더(`ANALYZER_OUTPUTS`, 기본 `../esports-analyzer/outputs`)를 읽어 세트 영상으로 그대로 저장한다. 경기 정보는 analyzer `header` 단계 결과(`work/header.json`)에서 온다 (api 는 op.gg 를 부르지 않음)
 
 ## 구조
 | 폴더 | 내용 |
