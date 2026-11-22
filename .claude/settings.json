@@ -1,0 +1,13 @@
+{
+  "extraKnownMarketplaces": {
+    "esports": {
+      "source": {
+        "source": "github",
+        "repo": "Esports-local/dev-workflow"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "esports-dev@esports": true
+  }
+}
