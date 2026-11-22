@@ -128,7 +128,8 @@ def _submit(short: Short, subs: list[dict] | None = None) -> None:
     short.attempts += 1
     short.status, short.error, short.finished_at = ShortStatus.QUEUED, "", None
     try:
-        state = analyzer.create_short(short.key, jobs.source_for(v), short.segments, subs, short.title)
+        # 구간 분석 영상(playback_name)도 원본 기준 시각이라 원본 파일을 그대로 자른다
+        state = analyzer.create_short(short.key, v.playback_name or jobs.source_for(v), short.segments, subs, short.title)
     except ApiError as e:
         short.status, short.error = ShortStatus.FAILED, e.message
         short.save()

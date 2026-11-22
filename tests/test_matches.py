@@ -4,7 +4,7 @@ import json
 import tempfile
 from pathlib import Path
 
-from django.core.management import call_command
+from django.core.management import CommandError, call_command
 from django.test import TestCase
 
 from matches import outputs
@@ -60,6 +60,16 @@ class SaveVideoTest(TestCase):
                      "--outputs-dir", self.tmp.name, stdout=open("/dev/null", "w"))
         v = GameVideo.objects.get(work_name="game_1080")
         self.assertEqual((v.opgg_match, v.set_number, v.header["match"]["set"]), (32706, 2, 2))
+
+    def test_import_outputs_video_name(self):
+        out = open("/dev/null", "w")
+        call_command("import_outputs", "game_1080", "--video", "game.mp4", "--outputs-dir", self.tmp.name, stdout=out)
+        v = GameVideo.objects.get(work_name="game_1080")
+        self.assertEqual((v.playback_name, v.video_name), ("game.mp4", ""))  # 재분석 대상(video_name)은 그대로
+        call_command("import_outputs", "game_1080", "--outputs-dir", self.tmp.name, stdout=out)
+        self.assertEqual(GameVideo.objects.get(work_name="game_1080").playback_name, "game.mp4")  # 안 주면 그대로
+        with self.assertRaises(CommandError):
+            call_command("import_outputs", "game_1080", "--video", "../x.mp4", "--outputs-dir", self.tmp.name, stdout=out)
 
 
 class MatchInfoTest(TestCase):

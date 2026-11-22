@@ -22,6 +22,15 @@ def _call(method: str, path: str, timeout: float = 30, **kwargs):
     return res.json()
 
 
+def video_file_url(name: str | None) -> str | None:
+    """GET /videos/{name}/file — 브라우저가 원본 영상을 받을 주소 (MAIN_PUBLIC_URL 기준). 이름이 없으면 None."""
+    if not name:
+        return None
+    from urllib.parse import quote
+
+    return f"{settings.MAIN_PUBLIC_URL.rstrip('/')}/videos/{quote(name, safe='')}/file"
+
+
 def list_videos() -> list[dict]:
     """GET /videos — [{name, size_bytes, duration_sec, width, height, has_audio, selectable, reason}]"""
     return _call("GET", "/videos", timeout=120)

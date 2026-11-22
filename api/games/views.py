@@ -78,7 +78,8 @@ def _detail(v: GameVideo, job: dict | None) -> dict:
     if job:
         progress = {"current_stage": job.get("current_stage"), "stages": job.get("stages"),
                     "elapsed_sec": job.get("elapsed_sec")}
-    return {**_summary(v), "video": v.video_name or None, "video_url": None, "stages": _stages(v),
+    return {**_summary(v), "video": v.video_name or None,
+            "video_url": analyzer.video_file_url(v.playback_name or v.video_name), "stages": _stages(v),
             "progress": progress, "error": v.error or None, "match": _match(v)}
 
 

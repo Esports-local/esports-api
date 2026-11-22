@@ -50,7 +50,7 @@ services:
     environment:
       VIDEOS_ROOT: /data
     ports:
-      - "8001:8001"
+      - "127.0.0.1:8001:8001"  # 원본 영상을 내주므로 이 컴퓨터에서만 (GET /videos/{name}/file)
     volumes:
       - ../esports-analyzer:/app  # 결과는 ../esports-analyzer/outputs 에 쌓이고 api 가 /outputs 로 읽는다
       - ${VIDEOS_DIR:-./videos}:/data:ro  # 분석할 원본 영상 폴더 (1920x1080 영상만 고를 수 있음)

@@ -24,15 +24,20 @@ class Command(BaseCommand):
         parser.add_argument("--lang", default="ko", help="해설 언어 ko | en")
         parser.add_argument("--match", type=int, help="op.gg 경기 번호")
         parser.add_argument("--set", type=int, dest="set_number", help="세트 번호")
+        parser.add_argument("--video", help="재생할 원본 영상 파일 이름 (analyzer VIDEOS_ROOT 기준). 재생에만 쓰고 재분석 대상은 안 바뀐다")
         parser.add_argument("--outputs-dir", default="/outputs", help="컨테이너 안 analyzer outputs 경로")
 
-    def handle(self, *args, work_name, title, lang, match, set_number, outputs_dir, **options):
+    def handle(self, *args, work_name, title, lang, match, set_number, video, outputs_dir, **options):
         work = Path(outputs_dir) / work_name / "work"
         if not work.is_dir():
             raise CommandError(f"결과 폴더가 없습니다: {work}")
         if bool(match) != bool(set_number):
             raise CommandError("--match 와 --set 은 같이 줍니다")
+        if video is not None and Path(video).name != video:
+            raise CommandError("--video 는 폴더 없이 파일 이름만 줍니다")
         extra = {"opgg_match": match, "set_number": set_number} if match else {}
+        if video:
+            extra["playback_name"] = video
         video = save_video(work, work_name, title or work_name, lang, **extra)
         stages = ", ".join(video.results) or "없음"
         has_header = "있음" if video.header else "없음 (header 단계를 돌리면 생김)"

@@ -51,6 +51,15 @@ class ShortsTest(TestCase):
         empty = GameVideo.objects.create(title="빈", work_name="empty")
         self.assertEqual(self.client.get(f"/games/{empty.id}/events").status_code, 404)
 
+    def test_range_game_renders_from_playback_file(self, src):
+        part = GameVideo.objects.create(title="구간", work_name="t_900-1500s", playback_name="t.mp4",
+                                        results=self.v.results)
+        with mock.patch("api.shorts.shorts.analyzer.create_short", side_effect=lambda key, *a: analyzer_state(key)) as cs:
+            res = self.client.post(f"/games/{part.id}/shorts", {"event_ids": [1]}, content_type="application/json")
+        self.assertEqual(res.status_code, 201)
+        self.assertEqual(cs.call_args.args[1], "t.mp4")  # 재분석용 video_name 이 비어도 원본 파일로 렌더
+        src.assert_not_called()
+
     def test_create_merges_and_reuses(self, _src):
         LineReview.objects.create(video=self.v, line_id=1, asr_text="캐리아 들어갑니다", text="케리아 들어갑니다")
         with mock.patch("api.shorts.shorts.analyzer.create_short", side_effect=lambda key, *a: analyzer_state(key)) as cs:

@@ -168,4 +168,6 @@ S3_PRESIGN_EXPIRES = int(os.environ.get("S3_PRESIGN_EXPIRES", "3600"))
 # 다른 서비스
 
 MAIN_URL = os.environ.get("MAIN_URL", "http://localhost:8001")
+# 브라우저가 analyzer 에 닿는 주소 (원본 영상 재생 video_url). compose 안 주소(MAIN_URL)와 다르다
+MAIN_PUBLIC_URL = os.environ.get("MAIN_PUBLIC_URL", "http://localhost:8001")
 API_URL = os.environ.get("API_URL", "http://localhost:8002")

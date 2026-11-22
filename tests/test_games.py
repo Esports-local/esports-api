@@ -38,6 +38,17 @@ class GamesTest(TestCase):
         self.assertEqual(status["asr"], ("done", 5.0))
         self.assertEqual(status["roi_ocr"], ("done", None))
         self.assertEqual(status["evaluate"], ("pending", None))
+        self.assertIsNone(d["video_url"])  # 원본 파일 이름을 모르면 재생 주소 없음
+
+    def test_video_url(self):
+        v = GameVideo.objects.create(title="원본 있음", work_name="lck_900-1500s", video_name="lck final.mp4")
+        with self.settings(MAIN_PUBLIC_URL="http://localhost:8001/"):
+            d = self.client.get(f"/games/{v.id}").json()
+        self.assertEqual(d["video"], "lck final.mp4")
+        self.assertEqual(d["video_url"], "http://localhost:8001/videos/lck%20final.mp4/file")
+        part = GameVideo.objects.create(title="구간", work_name="lck_final_900-1500s", playback_name="lck_final.mp4")
+        d = self.client.get(f"/games/{part.id}").json()
+        self.assertEqual((d["video"], d["video_url"]), (None, "http://localhost:8001/videos/lck_final.mp4/file"))
 
     def test_screen_filters_noise(self):
         runs = self.client.get(f"/games/{self.v.id}/screen?tag=kda,player_name").json()["runs"]
