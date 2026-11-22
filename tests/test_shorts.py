@@ -5,7 +5,7 @@ from unittest import mock
 from django.test import TestCase
 
 from api.exceptions import ApiError
-from matches.models import GameVideo, LineReview, Short
+from matches.models import GameVideo, Short
 
 EVENTS = [
     {"id": 1, "type": "kill", "team": "blue", "team_name": "T1", "start_sec": 100.0, "end_sec": 100.0,
@@ -61,15 +61,14 @@ class ShortsTest(TestCase):
         src.assert_not_called()
 
     def test_create_merges_and_reuses(self, _src):
-        LineReview.objects.create(video=self.v, line_id=1, asr_text="캐리아 들어갑니다", text="케리아 들어갑니다")
         with mock.patch("api.shorts.shorts.analyzer.create_short", side_effect=lambda key, *a: analyzer_state(key)) as cs:
             res = self.post({"event_ids": [2, 1]})
             self.assertEqual(res.status_code, 201)
             body = res.json()
             self.assertEqual(body["segments"], [{"start_sec": 94.0, "end_sec": 109.0}])  # 겹친 두 구간을 합침
             self.assertEqual((body["status"], body["attempts"], body["duration_sec"]), ("queued", 1, 15.0))
-            key, video, segments, subs, title = cs.call_args.args
-            self.assertEqual(subs, [{"start_sec": 97.0, "end_sec": 99.0, "text": "케리아 들어갑니다"}])  # 고친 문장
+            key, video, segments, title = cs.call_args.args
+            self.assertNotIn("subtitles", body)  # 숏폼에 자막을 넣지 않는다
             self.assertEqual(title, "T1 vs BLG · 킬 2")
             again = self.post({"event_ids": [1, 2]})
             self.assertEqual((again.status_code, again.json()["id"]), (200, body["id"]))
@@ -108,8 +107,7 @@ class ShortsTest(TestCase):
 
     def test_bad_requests(self, _src):
         for body, msg in [({}, "event_ids"), ({"event_ids": [99]}, "없는 이벤트"), ({"event_ids": [1, 2, 3, 4, 5, 6]}, "5개"),
-                          ({"event_ids": [1], "subtitles": "jp"}, "subtitles"), ({"event_ids": [1], "pre_sec": 30}, "pre_sec"),
-                          ({"event_ids": [1], "subtitles": "en"}, "subtitles")]:
+                          ({"event_ids": [1], "pre_sec": 30}, "pre_sec")]:
             res = self.post(body)
             self.assertEqual(res.status_code, 400, body)
             self.assertIn(msg, res.json()["error"])

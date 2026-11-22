@@ -1,4 +1,4 @@
-"""해설 대사 사람 검수 (LineReview): /lines 응답에 붙이고, 숏폼 자막에 고친 문장을 쓴다."""
+"""해설 대사 사람 검수 (LineReview): /lines 응답에 붙인다."""
 
 from matches.models import GameVideo, LineReview
 
@@ -14,8 +14,3 @@ def as_json(r: LineReview | None) -> dict | None:
         return None
     return {"text": r.text or None, "reviewed": r.reviewed, "updated_at": r.updated_at.isoformat()}
 
-
-def text_overrides(v: GameVideo) -> dict[str, str]:
-    """고친 문장 {대사 id(문자열): 문장} (숏폼 ko 자막). asr 결과가 없으면 빈 dict."""
-    lines = ((v.results.get("asr") or {}).get("result") or {}).get("lines") or []
-    return {str(i): r.text for i, r in current(v, lines).items() if r.text}

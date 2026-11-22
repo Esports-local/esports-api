@@ -1,7 +1,7 @@
 """숏폼: 이벤트 → 구간 계산, 같은 요청 판별(key), analyzer 렌더 맡기기·상태 갱신·저장소 업로드.
 
 흐름
-1. POST /games/{id}/shorts → 구간·자막·제목으로 key(입력 해시)를 만든다
+1. POST /games/{id}/shorts → 구간·제목으로 key(입력 해시)를 만든다 (자막은 넣지 않는다)
    - 같은 key 가 있으면 그 숏폼을 돌려준다 (done 이면 렌더 없이 바로, failed 면 다시 맡김)
    - 없으면 Short 를 만들고 analyzer POST /shorts 로 맡긴다 (analyzer 가 줄을 세움)
 2. GET /shorts/{id} → 끝나지 않았으면 analyzer 에 상태를 묻는다
@@ -16,13 +16,12 @@ from django.db import IntegrityError, transaction
 from django.utils import timezone
 
 from api.exceptions import ApiError
-from api.games import analyzer, jobs, reviews
+from api.games import analyzer, jobs
 from config import storage
 from matches.models import GameVideo, Short, ShortStatus
 from matches.outputs import OUTPUTS_ROOT
 
 EVENT_TYPES = ("kill", "tower", "objective")
-SUBTITLES = ("ko", "none")
 PRE_SEC, POST_SEC, MAX_PAD = 6.0, 4.0, 15.0
 MAX_EVENTS = 5
 TYPE_LABEL = {"kill": "킬", "tower": "타워", "objective": "오브젝트"}
@@ -57,7 +56,7 @@ def merge(spans: list[dict]) -> list[dict]:
 
 
 def title_for(v: GameVideo, picked: list[dict]) -> str:
-    """화면 위 제목: "T1 vs BLG · Doran 킬" / 여러 개면 "T1 vs BLG · 킬 2, 타워 1"."""
+    """숏폼 이름 (영상에는 그리지 않음): "T1 vs BLG · Doran 킬" / 여러 개면 "T1 vs BLG · 킬 2, 타워 1"."""
     teams = v.results.get("timeline", {}).get("result", {}).get("teams", {})
     head = f"{teams['blue']} vs {teams['red']}" if teams.get("blue") and teams.get("red") else v.title
     if len(picked) == 1:
@@ -70,27 +69,15 @@ def title_for(v: GameVideo, picked: list[dict]) -> str:
     return f"{head} · " + ", ".join(f"{k} {n}" for k, n in counts.items())
 
 
-def subtitle_lines(v: GameVideo, mode: str, segments: list[dict]) -> list[dict]:
-    """구간에 걸친 대사 [{start_sec, end_sec, text}]. 검수로 고친 문장 우선."""
-    if mode == "none":
-        return []
-    lines = (v.results.get("asr") or {}).get("result", {}).get("lines", [])
-    fixed = reviews.text_overrides(v)
-    texts = {ln["id"]: fixed.get(str(ln["id"]), ln["text"]) for ln in lines}
-    return [{"start_sec": ln["start_sec"], "end_sec": ln["end_sec"], "text": texts[ln["id"]]}
-            for ln in lines if texts[ln["id"]] and any(
-                ln["end_sec"] > s["start_sec"] and ln["start_sec"] < s["end_sec"] for s in segments)]
-
-
-def make_key(v: GameVideo, segments: list[dict], subs: list[dict], title: str) -> str:
+def make_key(v: GameVideo, segments: list[dict], title: str) -> str:
     """같은 입력이면 같은 key. timeline 을 다시 돌리면(created_at 이 바뀜) 다른 key."""
     version = (v.results.get("timeline") or {}).get("created_at", "")
-    raw = json.dumps({"work": v.work_name, "version": version, "segments": segments, "subs": subs, "title": title},
+    raw = json.dumps({"work": v.work_name, "version": version, "segments": segments, "title": title},
                      ensure_ascii=False, sort_keys=True)
     return "s" + hashlib.sha256(raw.encode()).hexdigest()[:24]
 
 
-def request(v: GameVideo, event_ids: list[int], mode: str, pre: float, post: float) -> tuple[Short, bool]:
+def request(v: GameVideo, event_ids: list[int], pre: float, post: float) -> tuple[Short, bool]:
     """숏폼을 요청한다. (숏폼, 새로 만들었는지).
 
     Raises:
@@ -102,9 +89,8 @@ def request(v: GameVideo, event_ids: list[int], mode: str, pre: float, post: flo
         raise ApiError(f"없는 이벤트입니다: {missing[0]}")
     picked = sorted((by_id[i] for i in event_ids), key=lambda e: e["start_sec"])
     segments = merge([clip(e, v.duration, pre, post) for e in picked])
-    subs = subtitle_lines(v, mode, segments)
     title = title_for(v, picked)
-    key = make_key(v, segments, subs, title)
+    key = make_key(v, segments, title)
 
     short = Short.objects.filter(key=key).first()
     created = short is None
@@ -112,24 +98,22 @@ def request(v: GameVideo, event_ids: list[int], mode: str, pre: float, post: flo
         try:
             with transaction.atomic():
                 short = Short.objects.create(video=v, key=key, event_ids=sorted(event_ids), segments=segments,
-                                             subtitles=mode, title=title)
+                                             title=title)
         except IntegrityError:  # 같은 요청이 동시에 들어옴
             short, created = Short.objects.get(key=key), False
     if created or short.status == ShortStatus.FAILED:
-        _submit(short, subs)
+        _submit(short)
     return short, created
 
 
-def _submit(short: Short, subs: list[dict] | None = None) -> None:
+def _submit(short: Short) -> None:
     """analyzer 에 렌더를 맡긴다 (시도 횟수 +1). analyzer 오류는 failed 로 남기고 다시 던진다."""
     v = short.video
-    if subs is None:
-        subs = subtitle_lines(v, short.subtitles, short.segments)
     short.attempts += 1
     short.status, short.error, short.finished_at = ShortStatus.QUEUED, "", None
     try:
         # 구간 분석 영상(playback_name)도 원본 기준 시각이라 원본 파일을 그대로 자른다
-        state = analyzer.create_short(short.key, v.playback_name or jobs.source_for(v), short.segments, subs, short.title)
+        state = analyzer.create_short(short.key, v.playback_name or jobs.source_for(v), short.segments, short.title)
     except ApiError as e:
         short.status, short.error = ShortStatus.FAILED, e.message
         short.save()
@@ -182,7 +166,7 @@ def as_json(short: Short) -> dict:
     """17번 응답 형식."""
     return {
         "id": short.id, "game_id": short.video_id, "status": short.status, "event_ids": short.event_ids,
-        "segments": short.segments, "subtitles": short.subtitles,
+        "segments": short.segments,
         "duration_sec": round(sum(s["end_sec"] - s["start_sec"] for s in short.segments), 2),
         "video_url": storage.public_url(short.storage_key) if short.status == ShortStatus.DONE else None,
         "render_sec": short.render_sec, "attempts": short.attempts, "error": short.error or None,

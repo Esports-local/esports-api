@@ -178,7 +178,6 @@ class Short(models.Model):
     key = models.CharField(max_length=64, unique=True)
     event_ids = models.JSONField(default=list)
     segments = models.JSONField(default=list)  # [{start_sec, end_sec}] 원본 기준, 합친 뒤
-    subtitles = models.CharField(max_length=4, default="ko")  # ko | en | none
     title = models.CharField(max_length=200, blank=True)
     status = models.CharField(max_length=10, choices=ShortStatus.choices, default=ShortStatus.QUEUED)
     storage_key = models.CharField(max_length=300, blank=True)  # shorts/<key>.mp4 (done 일 때)

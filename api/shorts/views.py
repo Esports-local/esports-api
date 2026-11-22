@@ -48,10 +48,7 @@ def game_shorts(request, pk: int):
         raise ApiError("event_ids 는 이벤트 번호 목록이어야 합니다")
     if len(set(ids)) > shorts.MAX_EVENTS:
         raise ApiError(f"이벤트는 {shorts.MAX_EVENTS}개까지 고를 수 있습니다")
-    mode = data.get("subtitles", "ko")
-    if mode not in shorts.SUBTITLES:
-        raise ApiError(f"subtitles 는 {', '.join(shorts.SUBTITLES)} 중 하나여야 합니다")
-    short, created = shorts.request(v, sorted(set(ids)), mode, _pad(data, "pre_sec", shorts.PRE_SEC),
+    short, created = shorts.request(v, sorted(set(ids)), _pad(data, "pre_sec", shorts.PRE_SEC),
                                     _pad(data, "post_sec", shorts.POST_SEC))
     return Response(shorts.as_json(short), status=201 if created else 200)
 

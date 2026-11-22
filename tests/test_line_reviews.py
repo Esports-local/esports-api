@@ -2,7 +2,6 @@
 
 from django.test import TestCase
 
-from api.games import reviews
 from matches.models import GameVideo, LineReview
 
 LINES = [
@@ -56,8 +55,3 @@ class LineReviewTest(TestCase):
         r = self.post(2, {"reviewed": True}).json()["review"]  # 다시 검수하면 새로 시작
         self.assertIsNone(r["text"])
         self.assertEqual(LineReview.objects.get(video=self.v, line_id=2).asr_text, "티원이 승리")
-
-    def test_text_overrides_only_fixed(self):
-        self.post(2, {"text": "티원 승리"})
-        self.post(1, {"reviewed": True})  # 안 고친 대사는 빠진다
-        self.assertEqual(reviews.text_overrides(self.v), {"2": "티원 승리"})
