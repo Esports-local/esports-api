@@ -57,6 +57,11 @@ def create_short(key: str, video: str, segments: list[dict], title: str | None) 
                                          "title": title})
 
 
+def parse_query(text: str, players: dict[str, str]) -> dict:
+    """POST /shorts/query — 모음형 숏폼 요청 글 → 조건 (LLM). 응답 {filter, title, note, error}"""
+    return _call("POST", "/shorts/query", json={"text": text, "players": players}, timeout=60)
+
+
 def get_short(key: str) -> dict:
     """GET /shorts/{key} — analyzer 를 다시 띄웠으면 404 (같은 내용으로 다시 보내면 됨)."""
     return _call("GET", f"/shorts/{key}")

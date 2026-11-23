@@ -23,16 +23,101 @@ from matches.outputs import OUTPUTS_ROOT
 
 EVENT_TYPES = ("kill", "tower", "objective")
 PRE_SEC, POST_SEC, MAX_PAD = 6.0, 4.0, 15.0
-MAX_EVENTS = 5
 TYPE_LABEL = {"kill": "킬", "tower": "타워", "objective": "오브젝트"}
 
 
 def events(v: GameVideo) -> list[dict]:
-    """timeline 이벤트 + 숏폼 기본 구간(clip). timeline 결과가 없으면 404."""
+    """경기 이벤트 + 숏폼 구간(clip). analyzer shorts 단계 결과가 있으면 그 이벤트별 클립(해설 기준 구간,
+    선수 이름·챔피언, 뒤따르는 리플레이)을, 없으면 timeline 이벤트 앞 PRE_SEC·뒤 POST_SEC. 둘 다 없으면 404."""
+    clips = _result(v, "shorts").get("clips")
+    if clips:
+        players = _result(v, "context").get("players") or {}
+        return [_from_clip(c, players) for c in clips]
     data = v.results.get("timeline")
     if not data:
         raise ApiError("timeline 결과가 없습니다", 404)
     return [{**e, "clip": clip(e, v.duration, PRE_SEC, POST_SEC)} for e in data["result"]["events"]]
+
+
+def scenes(v: GameVideo) -> list[dict]:
+    """추천 장면 후보 (shorts 단계, 대사로 묶은 장면 중 킬·오브젝트가 있는 live 장면). 없으면 빈 목록."""
+    res = _result(v, "shorts")
+    by_scene: dict[str, list[dict]] = {}
+    players = _result(v, "context").get("players") or {}
+    for c in res.get("clips") or []:
+        if c.get("scene"):
+            by_scene.setdefault(c["scene"], []).append(_from_clip(c, players))
+    out = []
+    for c in res.get("candidates") or []:
+        evs = by_scene.get(c["id"], [])
+        clip = None
+        if c.get("clip_start_sec") is not None and c.get("clip_end_sec") is not None:
+            clip = {"start_sec": c["clip_start_sec"], "end_sec": c["clip_end_sec"]}
+        out.append({"id": c["id"], "start_sec": c["start_sec"], "end_sec": c["end_sec"],
+                    "duration_sec": c["duration_sec"], "cuts": c["cuts"], "events": evs,
+                    "rank": c.get("rank"), "title": c.get("title") or auto_title(evs),
+                    "titles": c.get("titles") or [], "reason": c.get("reason") or "",
+                    "clip": clip, "source": c.get("source"), "warnings": c.get("warnings") or []})
+    return sorted(out, key=lambda s: s["rank"] or 999)
+
+
+def query(v: GameVideo, text: str) -> dict:
+    """모음형 요청 글 → 조건 (analyzer LLM). 선수 목록은 context 결과. analyzer 오류는 error 로 돌려준다."""
+    players = {slot: f"{p.get('team')} {p.get('name')} ({p.get('champion')})"
+               for slot, p in (_result(v, "context").get("players") or {}).items() if p.get("name")}
+    from django.core.cache import cache
+
+    ck = "shorts-query:" + hashlib.sha256(json.dumps([v.id, text, players], ensure_ascii=False).encode()).hexdigest()
+    if (hit := cache.get(ck)) is not None:  # 같은 요청 글로 다시 열 때(새로고침) LLM 을 다시 부르지 않는다
+        return hit
+    try:
+        res = analyzer.parse_query(text, players)
+    except ApiError as e:
+        return {"text": text, "filter": {}, "title": None, "note": None, "error": e.message}  # 실패는 저장 안 함
+    out = {"text": text, **res}
+    if not res.get("error"):
+        cache.set(ck, out, 60 * 60)
+    return out
+
+
+def _result(v: GameVideo, stage: str) -> dict:
+    return ((v.results or {}).get(stage) or {}).get("result") or {}
+
+
+def _who(players: dict, slot: str | None) -> dict | None:
+    if not slot:
+        return None
+    p = players.get(slot) or {}
+    return {"slot": slot, "name": p.get("name"), "champion": p.get("champion"), "team": p.get("team")}
+
+
+def _from_clip(c: dict, players: dict) -> dict:
+    """shorts 단계 이벤트 클립 → 14번 이벤트 모양 (players 는 예전 모양과 같게 이름 목록도 둔다)."""
+    killer = _who(players, c.get("killer"))
+    victims = [_who(players, s) for s in c.get("victims") or []]
+    assists = [_who(players, s) for s in c.get("assists") or []]
+    names = lambda ws: [w["name"] or w["slot"] for w in ws if w]
+    return {"id": c["event_id"], "type": c["type"], "subtype": c.get("subtype"), "team": c.get("team"),
+            "team_name": (killer or {}).get("team"), "t": c["t"], "start_sec": c["t"], "end_sec": c["t"],
+            "game_time": c.get("game_time"), "killer": killer, "victims": victims, "assists": assists,
+            "players": {k: v for k, v in (("killer", names([killer])), ("victims", names(victims)),
+                                          ("assists", names(assists))) if v},
+            "tags": c.get("tags") or [], "area": c.get("area"), "on_screen": c.get("on_screen"),
+            "scene": c.get("scene"), "clip": {"start_sec": c["start_sec"], "end_sec": c["end_sec"]},
+            "replay": c.get("replay")}
+
+
+OBJECT_LABEL = {"dragon": "용", "elder": "장로", "baron": "바론", "herald": "전령", "grubs": "유충", "atakhan": "아타칸"}
+
+
+def auto_title(evs: list[dict]) -> str:
+    """자동 제목 (10자 안쪽): "Ruler 킬" / "킬 2 · 용" """
+    kills = [e for e in evs if e["type"] == "kill"]
+    objs = [OBJECT_LABEL.get((e.get("subtype") or "").split(":")[0], "오브젝트") for e in evs if e["type"] == "objective"]
+    if len(kills) == 1 and not objs and kills[0].get("killer"):
+        return f"{kills[0]['killer']['name'] or kills[0]['killer']['slot']} 킬"
+    parts = ([f"킬 {len(kills)}"] if kills else []) + sorted(set(objs))
+    return " · ".join(parts) or "장면"
 
 
 def clip(e: dict, duration: float | None, pre: float, post: float) -> dict:
@@ -92,13 +177,36 @@ def request(v: GameVideo, event_ids: list[int], pre: float, post: float) -> tupl
     title = title_for(v, picked)
     key = make_key(v, segments, title)
 
+    return _get_or_submit(v, key, sorted(event_ids), segments, title)
+
+
+def request_segments(v: GameVideo, segments: list[dict], title: str, event_ids: list | None = None) -> tuple[Short, bool]:
+    """구간 목록으로 숏폼을 요청한다 (추천 장면·모음). 겹치는 구간은 합친다.
+
+    Raises:
+        ApiError: 잘못된 구간(400), analyzer 연결 실패(502).
+    """
+    spans = []
+    for s in segments:
+        a, b = (s.get("start_sec"), s.get("end_sec")) if isinstance(s, dict) else (None, None)
+        if any(isinstance(x, bool) or not isinstance(x, (int, float)) for x in (a, b)) or not 0 <= a < b:
+            raise ApiError("segments 는 [{start_sec, end_sec}] 이고 0 <= start_sec < end_sec 여야 합니다")
+        if v.duration and b > v.duration + 1:
+            raise ApiError(f"구간이 영상 길이({v.duration:.0f}초)를 넘습니다")
+        spans.append({"start_sec": round(float(a), 2), "end_sec": round(float(b), 2)})
+    segs = merge(spans)
+    key = make_key(v, segs, title)
+    return _get_or_submit(v, key, sorted(event_ids or []), segs, title)
+
+
+def _get_or_submit(v: GameVideo, key: str, event_ids: list, segments: list[dict], title: str) -> tuple[Short, bool]:
+    """같은 key 숏폼이 있으면 그것 (실패한 것이면 다시 맡김), 없으면 만들고 analyzer 에 맡긴다."""
     short = Short.objects.filter(key=key).first()
     created = short is None
     if created:
         try:
             with transaction.atomic():
-                short = Short.objects.create(video=v, key=key, event_ids=sorted(event_ids), segments=segments,
-                                             title=title)
+                short = Short.objects.create(video=v, key=key, event_ids=event_ids, segments=segments, title=title)
         except IntegrityError:  # 같은 요청이 동시에 들어옴
             short, created = Short.objects.get(key=key), False
     if created or short.status == ShortStatus.FAILED:
@@ -166,7 +274,7 @@ def as_json(short: Short) -> dict:
     """17번 응답 형식."""
     return {
         "id": short.id, "game_id": short.video_id, "status": short.status, "event_ids": short.event_ids,
-        "segments": short.segments,
+        "segments": short.segments, "title": short.title,
         "duration_sec": round(sum(s["end_sec"] - s["start_sec"] for s in short.segments), 2),
         "video_url": storage.public_url(short.storage_key) if short.status == ShortStatus.DONE else None,
         "render_sec": short.render_sec, "attempts": short.attempts, "error": short.error or None,
