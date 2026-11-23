@@ -209,3 +209,21 @@ class ShortsClipsTest(TestCase):
                              content_type="application/json")
         self.assertEqual(cs.call_args.args[4], ["2026 LCK 결승 1세트", "듀로의 즉시 복수"])
         self.assertEqual(len(cs.call_args.args[5]), 2)
+
+    def test_player_dictionary_in_captions(self, _src):
+        from api.shorts import shorts as sh
+        from matches.models import Player
+        v = self.v
+        v.header = {"teams": {"blue": {"name": "GEN"}, "red": {"name": "HLE"}},
+                    "players": [{"side": "red", "role": "jungle", "name": "Kanavi"}, {"side": "blue", "role": "bot", "name": "Ruler"}]}
+        v.save(update_fields=["header"])
+        from matches.management.commands.sync_players import sync
+        r = sync({"kanavi": "카나비"})  # 코드 사전 (대소문자 무시)
+        self.assertEqual(Player.objects.get(name__iexact="kanavi").team, "HLE")  # header 선수는 팀을 맞춤
+        self.assertEqual(r["missing"], ["Ruler"])  # 경기에 나왔는데 사전에 없음
+        segs = [{"start_sec": 1313.5, "end_sec": 1336.5}]
+        caps = sh.overlay(v, [11, 12], segs, "t")["captions"]
+        self.assertEqual([c["lines"][0] for c in caps], ["카나비, Ruler 잡고", "Duro, 카나비 잡고"])  # 사전에 없으면 영어
+        before = sh.make_key(v, segs, "t", [11, 12], sh.overlay(v, [11, 12], segs, "t"))
+        Player.objects.filter(name="Ruler").update(name_ko="룰러")
+        self.assertNotEqual(before, sh.make_key(v, segs, "t", [11, 12], sh.overlay(v, [11, 12], segs, "t")))  # 사전을 고치면 다시 렌더

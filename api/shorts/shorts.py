@@ -18,7 +18,7 @@ from django.utils import timezone
 from api.exceptions import ApiError
 from api.games import analyzer, jobs
 from config import storage
-from matches.models import GameVideo, Short, ShortStatus
+from matches.models import GameVideo, Player, Short, ShortStatus
 from matches.outputs import OUTPUTS_ROOT
 
 PRE_SEC, POST_SEC, MAX_PAD = 6.0, 4.0, 15.0
@@ -157,11 +157,13 @@ def title_for(v: GameVideo, picked: list[dict]) -> str:
 LAYOUT_VERSION = "v3"  # 렌더 화면 구성 (v2: 11-23 위 제목 + 가운데 1180x1080 + 설명 자막, v3: 자막을 킬 시각부터). 바꾸면 다시 렌더
 
 
-def make_key(v: GameVideo, segments: list[dict], title: str, event_ids: list | None = None) -> str:
-    """같은 입력이면 같은 key. timeline 을 다시 돌리거나(created_at 이 바뀜) 화면 구성이 바뀌면 다른 key."""
+def make_key(v: GameVideo, segments: list[dict], title: str, event_ids: list | None = None,
+             ov: dict | None = None) -> str:
+    """같은 입력이면 같은 key. timeline 을 다시 돌리거나(created_at 이 바뀜) 화면 구성·영상 위 글자(선수 이름 사전을
+    고친 경우 포함)가 바뀌면 다른 key."""
     version = (v.results.get("timeline") or {}).get("created_at", "")
     raw = json.dumps({"work": v.work_name, "version": version, "segments": segments, "title": title,
-                      "events": sorted(event_ids or []), "layout": LAYOUT_VERSION},
+                      "events": sorted(event_ids or []), "layout": LAYOUT_VERSION, "overlay": ov or {}},
                      ensure_ascii=False, sort_keys=True)
     return "s" + hashlib.sha256(raw.encode()).hexdigest()[:24]
 
@@ -179,6 +181,7 @@ def overlay(v: GameVideo, event_ids: list, segments: list[dict], title: str) -> 
     """렌더에 넘길 위 제목 줄과 설명 자막 (이벤트 데이터로 틀을 채움, LLM 없음).
 
     킬: "{킬한 선수}, {당한 선수} 잡고" / "킬 {블루 팀} {점수} : {점수} {레드 팀}" (당한 선수를 모르면 "{킬한 선수} 킬").
+    선수 이름은 Player 사전으로 한국어로 바꾼다 (없으면 영어 그대로).
     오브젝트: "{팀} {용 종류·바론…}". 타워는 넣지 않는다. 이벤트 시각(op.gg)부터 다음 자막 전까지(길어도 6초).
     """
     try:
@@ -189,11 +192,13 @@ def overlay(v: GameVideo, event_ids: list, segments: list[dict], title: str) -> 
     t_of = lambda e: e.get("t", e.get("end_sec", 0.0))  # 예전 timeline 이벤트는 t 가 없다
     inside = lambda t: any(s["start_sec"] <= t <= s["end_sec"] for s in segments)
     picked = sorted((evs[i] for i in event_ids if i in evs and inside(t_of(evs[i]))), key=t_of)
+    ko = Player.ko_map()
+    nm = lambda n: ko.get((n or "").lower(), n)
     caps = []
     for e in picked:
-        killer = (e.get("killer") or {}).get("name") if isinstance(e.get("killer"), dict) else None
+        killer = nm((e.get("killer") or {}).get("name")) if isinstance(e.get("killer"), dict) else None
         if e["type"] == "kill" and killer:
-            victims = [w["name"] for w in e.get("victims") or [] if isinstance(w, dict) and w.get("name")]
+            victims = [nm(w["name"]) for w in e.get("victims") or [] if isinstance(w, dict) and w.get("name")]
             lines = [f"{killer}, {', '.join(victims)} 잡고" if victims else f"{killer} 킬"]
             if e.get("score"):
                 lines.append(f"킬 {teams['blue']} {e['score']['blue']} : {e['score']['red']} {teams['red']}")
@@ -222,7 +227,7 @@ def request(v: GameVideo, event_ids: list[int], pre: float, post: float) -> tupl
     picked = sorted((by_id[i] for i in event_ids), key=lambda e: e["start_sec"])
     segments = merge([clip(e, v.duration, pre, post) for e in picked])
     title = title_for(v, picked)
-    key = make_key(v, segments, title, event_ids)
+    key = make_key(v, segments, title, event_ids, overlay(v, sorted(event_ids), segments, title))
 
     return _get_or_submit(v, key, sorted(event_ids), segments, title)
 
@@ -242,7 +247,7 @@ def request_segments(v: GameVideo, segments: list[dict], title: str, event_ids: 
             raise ApiError(f"구간이 영상 길이({v.duration:.0f}초)를 넘습니다")
         spans.append({"start_sec": round(float(a), 2), "end_sec": round(float(b), 2)})
     segs = merge(spans)
-    key = make_key(v, segs, title, event_ids)
+    key = make_key(v, segs, title, event_ids, overlay(v, sorted(event_ids or []), segs, title))
     return _get_or_submit(v, key, sorted(event_ids or []), segs, title)
 
 

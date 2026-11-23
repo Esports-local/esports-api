@@ -99,6 +99,30 @@ class GamePlayer(models.Model):
         return f"{self.game} {self.side} {self.role} {self.name}"
 
 
+class Player(models.Model):
+    """선수 이름 사전: 영어 이름(op.gg·header) → 한국어 표기. 숏폼 자막을 만들 때 바꿔 쓴다 (Faker → 페이커).
+
+    내용은 코드(matches/players_ko.py)가 기준이고 sync_players 가 넣는다 (손으로 고치지 않음).
+    name 은 대소문자를 가리지 않고 찾는다. name_ko 가 비어 있으면 영어 그대로 쓴다.
+    """
+
+    name = models.CharField(max_length=50, unique=True)      # Faker
+    name_ko = models.CharField(max_length=50, blank=True)    # 페이커
+    team = models.CharField(max_length=20, blank=True)       # 참고용 (T1)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["team", "name"]
+
+    def __str__(self):
+        return f"{self.name} → {self.name_ko or '?'}"
+
+    @staticmethod
+    def ko_map() -> dict[str, str]:
+        """{영어 이름 소문자: 한국어} (한국어가 있는 것만)."""
+        return {p.name.lower(): p.name_ko for p in Player.objects.exclude(name_ko="")}
+
+
 class AnalyzeStatus(models.TextChoices):
     PENDING = "pending"
     RUNNING = "running"

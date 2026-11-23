@@ -25,6 +25,7 @@ services:
     command: >
       sh -c "python manage.py migrate &&
              { python manage.py init_storage || echo '[warn] 저장소 준비 실패. GET /health 확인'; } &&
+             python manage.py sync_players &&
              python manage.py runserver 0.0.0.0:8000"
 
   ui:
