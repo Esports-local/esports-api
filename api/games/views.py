@@ -7,8 +7,8 @@ from rest_framework.decorators import api_view
 from rest_framework.response import Response
 
 from api.exceptions import ApiError, get_or_404
-from api.games import analyzer, jobs, reviews
-from matches.models import GameVideo, LineReview
+from api.games import analyzer, cuts, jobs, reviews
+from matches.models import CutReview, GameVideo, LineReview
 from matches.screen import filter_runs, snapshot, static_values
 
 GAME_NOT_FOUND = "영상을 찾을 수 없습니다"
@@ -250,6 +250,37 @@ def game_line_review(request, pk: int, line_id: int):
         r.reviewed = reviewed
     r.save()
     return Response({"id": line_id, "text": line["text"], "review": reviews.as_json(r)})
+
+
+@extend_schema(tags=["games"], summary="19. 장면 전환 검수 목록 (통과·불통)")
+@api_view(["GET"])
+def game_cut_reviews(request, pk: int):
+    v = _video(pk)
+    trans = cuts.transitions(v)
+    reviews = cuts.current(v, trans)
+    return Response({"reviews": [cuts.as_json(r) for r in reviews.values()], "summary": cuts.summary(trans, reviews)})
+
+
+@extend_schema(tags=["games"], summary="20. 장면 전환 검수 저장 (pass · fail, null 이면 지움)")
+@api_view(["POST"])
+def game_cut_review(request, pk: int, transition_id: int):
+    v = _video(pk)
+    trans = cuts.transitions(v)
+    tr = next((t for t in trans if t["id"] == transition_id), None)
+    if tr is None:
+        raise Http404("장면 전환을 찾을 수 없습니다")
+    if "verdict" not in request.data:
+        raise ApiError("verdict 를 보내야 합니다 (pass · fail · null)")
+    verdict = request.data.get("verdict")
+    if verdict not in (None, "pass", "fail"):
+        raise ApiError("verdict 는 pass, fail, null 중 하나입니다")
+    if verdict is None:
+        CutReview.objects.filter(video=v, transition_id=transition_id).delete()
+    else:
+        CutReview.objects.update_or_create(video=v, transition_id=transition_id,
+                                           defaults={"verdict": verdict, "start_sec": tr["start_sec"], "kind": tr["kind"]})
+    reviews = cuts.current(v, trans)
+    return Response({"transition_id": transition_id, "verdict": verdict, "summary": cuts.summary(trans, reviews)})
 
 
 @extend_schema(tags=["games"], summary="5. 단계 결과 원본")

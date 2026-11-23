@@ -20,6 +20,8 @@ urlpatterns = [
     path("games/<int:pk>/analyze", games.game_analyze),
     path("games/<int:pk>/cancel", games.game_cancel),
     path("sources", games.source_list),
+    path("games/<int:pk>/cuts/reviews", games.game_cut_reviews),
+    path("games/<int:pk>/cuts/<int:transition_id>/review", games.game_cut_review),
     # 경기 이벤트·숏폼 (14~18번)
     path("games/<int:pk>/events", shorts.game_events),
     path("games/<int:pk>/shorts", shorts.game_shorts),

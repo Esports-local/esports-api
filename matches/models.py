@@ -3,100 +3,12 @@
 - GameVideo: 세트 영상 하나. analyzer 단계 결과(work/<stage>.json)와 경기 기본 정보(header)를 통째로 저장
 - LineReview: 대사 원문 사람 검수
 - Short: 숏폼
-- Team·Match·MatchGame·GamePlayer: 예전에 api 가 op.gg 에서 직접 채우던 표. 경기 정보는 이제 analyzer header
-  단계가 만들어 GameVideo.header 에 들어가므로 더 이상 채우지 않는다 (지울지 결정 전까지 남겨 둠)
+- Player: 선수 이름 사전 (영어 → 한국어)
+- CutReview: 장면 전환 사람 검수 (통과·불통)
+경기 정보는 analyzer header 단계가 만들어 GameVideo.header 에 들어간다 (예전 Team·Match·MatchGame·GamePlayer 표는 11-23 삭제)
 """
 
 from django.db import models
-
-
-class Side(models.TextChoices):
-    BLUE = "blue"
-    RED = "red"
-
-
-class Role(models.TextChoices):
-    TOP = "top"
-    JUNGLE = "jungle"
-    MID = "mid"
-    BOT = "bot"
-    SUPPORT = "support"
-
-
-class Team(models.Model):
-    opgg_id = models.PositiveIntegerField(unique=True)
-    name = models.CharField(max_length=100)  # Bilibili Gaming
-    acronym = models.CharField(max_length=20)  # BLG
-    image_url = models.URLField(max_length=500, blank=True)
-
-    class Meta:
-        ordering = ["acronym"]
-
-    def __str__(self):
-        return self.acronym
-
-
-class Match(models.Model):
-    opgg_id = models.PositiveIntegerField(unique=True)  # esports.op.gg/matches/<번호>
-    name = models.CharField(max_length=200)  # Semifinal 1: BLG vs T1
-    league = models.CharField(max_length=50, blank=True)  # Worlds
-    stage = models.CharField(max_length=100, blank=True)  # Playoffs
-    year = models.PositiveIntegerField(null=True, blank=True)
-    begin_at = models.DateTimeField(null=True, blank=True)  # 실제 시작 (UTC). 안 했으면 예정 시각
-    status = models.CharField(max_length=20, blank=True)  # not_started | running | finished
-    best_of = models.PositiveIntegerField(default=1)
-    home_team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name="home_matches")
-    away_team = models.ForeignKey(Team, on_delete=models.PROTECT, related_name="away_matches")
-    home_score = models.PositiveIntegerField(default=0)
-    away_score = models.PositiveIntegerField(default=0)
-    winner = models.ForeignKey(Team, on_delete=models.PROTECT, null=True, blank=True, related_name="won_matches")
-    patch = models.CharField(max_length=20, blank=True)  # 16.22.1
-    source_url = models.URLField(max_length=500)
-    raw = models.JSONField(default=dict, blank=True)  # 가져온 원본 (나중에 필드 추가할 때 다시 안 받도록)
-    fetched_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        ordering = ["-begin_at"]
-
-    def __str__(self):
-        return self.name
-
-
-class MatchGame(models.Model):
-    match = models.ForeignKey(Match, on_delete=models.CASCADE, related_name="games")
-    number = models.PositiveIntegerField()  # 세트 번호 (1부터)
-    opgg_game_id = models.PositiveIntegerField(unique=True, null=True, blank=True)
-    full_video_url = models.URLField(max_length=500, blank=True)
-    highlight_url = models.URLField(max_length=500, blank=True)
-    # 페이지에 없음 → 화면 OCR·직접 입력
-    blue_team = models.ForeignKey(Team, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
-    red_team = models.ForeignKey(Team, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
-    winner = models.ForeignKey(Team, on_delete=models.PROTECT, null=True, blank=True, related_name="+")
-    bans = models.JSONField(default=dict, blank=True)  # {"blue": ["Galio", …], "red": […]} 챔피언 영어 이름 (op.gg)
-
-    class Meta:
-        ordering = ["match_id", "number"]
-        constraints = [models.UniqueConstraint(fields=["match", "number"], name="uniq_match_game_number")]
-
-    def __str__(self):
-        return f"{self.match} {self.number}세트"
-
-
-class GamePlayer(models.Model):
-    game = models.ForeignKey(MatchGame, on_delete=models.CASCADE, related_name="players")
-    side = models.CharField(max_length=4, choices=Side.choices)
-    role = models.CharField(max_length=10, choices=Role.choices)
-    name = models.CharField(max_length=50)  # Keria
-    name_ko = models.CharField(max_length=50, blank=True)  # 케리아 (해설 표기, 선택)
-    champion = models.CharField(max_length=50, blank=True)  # Poppy
-    champion_ko = models.CharField(max_length=50, blank=True)  # 뽀삐
-
-    class Meta:
-        ordering = ["game_id", "side", "role"]
-        constraints = [models.UniqueConstraint(fields=["game", "side", "role"], name="uniq_game_side_role")]
-
-    def __str__(self):
-        return f"{self.game} {self.side} {self.role} {self.name}"
 
 
 class Player(models.Model):
@@ -138,7 +50,6 @@ class GameVideo(models.Model):
 
     title = models.CharField(max_length=200)
     language = models.CharField(max_length=5, default="ko")  # 해설 언어 ko | en
-    game = models.ForeignKey(MatchGame, on_delete=models.SET_NULL, null=True, blank=True, related_name="videos")
     work_name = models.CharField(max_length=200, unique=True)  # analyzer outputs/<이름> (영상 파일 이름에서 확장자 뺀 것)
     video_name = models.CharField(max_length=300, blank=True)  # analyzer VIDEOS_ROOT 의 원본 파일 이름 (분석 대상)
     # 재생·숏폼 렌더에 쓰는 원본 파일 이름 (video_url). 구간 분석 폴더(<영상>_900-1500s)를 넣을 때 쓴다.
@@ -183,6 +94,29 @@ class LineReview(models.Model):
 
     def __str__(self):
         return f"{self.video_id}#{self.line_id}"
+
+
+class CutReview(models.Model):
+    """장면 전환(segments 단계 transition) 하나의 사람 검수: 통과(pass) · 불통(fail).
+
+    analyzer 결과와 따로 두어 분석을 다시 돌려도 남는다. 검수할 때의 전환 시각·종류를 같이 저장하고,
+    segments 를 다시 돌려 같은 번호의 전환 시각(0.05초)이나 종류가 바뀌었으면 이 검수는 쓰지 않는다.
+    """
+
+    class Verdict(models.TextChoices):
+        PASS = "pass"
+        FAIL = "fail"
+
+    video = models.ForeignKey(GameVideo, on_delete=models.CASCADE, related_name="cut_reviews")
+    transition_id = models.PositiveIntegerField()
+    start_sec = models.FloatField()
+    kind = models.CharField(max_length=10)  # cut · dissolve · wipe
+    verdict = models.CharField(max_length=4, choices=Verdict.choices)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["video_id", "transition_id"]
+        constraints = [models.UniqueConstraint(fields=["video", "transition_id"], name="uniq_cut_review")]
 
 
 class ShortStatus(models.TextChoices):
