@@ -18,8 +18,8 @@ LoL 중계 분석 → 숏폼의 백엔드 (Django + DRF). 세트 영상과 analy
 | 10 | POST | `/games/{id}/cancel` | 분석 중지 |
 | 12 | GET | `/sources` | 원본 영상 목록 (`VIDEOS_DIR`) |
 | 13 | POST | `/games/{id}/lines/{line_id}/review` | 대사 검수: `text`(고친 문장)·`reviewed`(O/X) 중 하나 이상 |
-| 14 | GET | `/games/{id}/events?type=&player=` | 경기 이벤트(킬·타워·오브젝트, analyzer timeline) + 이벤트마다 숏폼 기본 구간 `clip` |
-| 15 | POST | `/games/{id}/shorts` | 숏폼 만들기 `{event_ids, pre_sec, post_sec}` (중계 화면 가운데 9:16, 자막 없음). 같은 입력이면 기존 숏폼(200), 실패한 것은 다시 렌더 |
+| 14 | GET | `/games/{id}/events?type=&player=&killer=&team=&tag=&q=` | 경기 이벤트(킬·타워·오브젝트) + 이벤트마다 숏폼 구간 `clip`(analyzer shorts 단계: 해설 소리 기준, 없으면 앞 6초·뒤 4초), 선수(`killer`·`victims`·`assists`: 슬롯·이름·챔피언), `replay`(뒤따르는 리플레이), 추천 장면 `scenes`(LLM 순위 `rank`·제목 `title`·`titles`·`reason`·자른 구간 `clip`·`source`·`warnings`, 순위순). `q`: 요청 글을 analyzer LLM 이 조건으로 바꿔 거름(직접 준 조건이 먼저, 1시간 저장), 응답 `query` {text, filter, title, note, error} |
+| 15 | POST | `/games/{id}/shorts` | 숏폼 만들기 `{segments: [{start_sec, end_sec}], title, event_ids?}` (추천 장면·모음, 개수·길이 제한 없음) 또는 `{event_ids, pre_sec, post_sec}`. 중계 화면 가운데 9:16, 자막 없음. 같은 입력이면 기존 숏폼(200), 실패한 것은 다시 렌더. 응답(15·17번)에 `title` |
 | 16 | GET | `/games/{id}/shorts` | 세트의 숏폼 목록 (최근순) |
 | 17 | GET | `/shorts/{id}` | 숏폼 상태·재생 주소·렌더 시간. 끝나지 않았으면 analyzer 상태로 갱신 |
 
