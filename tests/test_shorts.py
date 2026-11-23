@@ -201,8 +201,8 @@ class ShortsClipsTest(TestCase):
         ov = sh.overlay(v, [11, 12, 14], [{"start_sec": 1313.5, "end_sec": 1336.5}], "듀로의 즉시 복수")
         self.assertEqual(ov["title_lines"], ["2026 LCK 결승 1세트", "듀로의 즉시 복수"])
         self.assertEqual(ov["captions"], [
-            {"start_sec": 1320.5, "end_sec": 1326.5, "lines": ["Kanavi, Ruler 잡고", "킬 GEN 3 : 4 HLE"]},
-            {"start_sec": 1327.7, "end_sec": 1333.7, "lines": ["Duro, Kanavi 잡고", "킬 GEN 4 : 4 HLE"]}])  # 타워(14)는 구간 밖
+            {"start_sec": 1320.5, "end_sec": 1326.5, "lines": ["Kanavi, Ruler 잡고", "킬 젠지 3 : 4 한화생명"]},
+            {"start_sec": 1327.7, "end_sec": 1333.7, "lines": ["Duro, Kanavi 잡고", "킬 젠지 4 : 4 한화생명"]}])  # 타워(14)는 구간 밖
         with mock.patch("api.shorts.shorts.analyzer.create_short", side_effect=lambda key, *a: analyzer_state(key)) as cs:
             self.client.post(f"/games/{v.id}/shorts", {"segments": [{"start_sec": 1313.5, "end_sec": 1336.5}],
                                                      "title": "듀로의 즉시 복수", "event_ids": [11, 12]},

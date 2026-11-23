@@ -19,6 +19,7 @@ from api.exceptions import ApiError
 from api.games import analyzer, jobs
 from config import storage
 from matches.models import GameVideo, Player, Short, ShortStatus
+from matches.teams_ko import team_ko
 from matches.outputs import OUTPUTS_ROOT
 
 PRE_SEC, POST_SEC, MAX_PAD = 6.0, 4.0, 15.0
@@ -188,7 +189,7 @@ def overlay(v: GameVideo, event_ids: list, segments: list[dict], title: str) -> 
         evs = {e["id"]: e for e in events(v)}
     except ApiError:
         evs = {}
-    teams = {s: ((v.header or {}).get("teams") or {}).get(s, {}).get("name") or s.upper() for s in ("blue", "red")}
+    teams = {s: team_ko(((v.header or {}).get("teams") or {}).get(s, {}).get("name")) or s.upper() for s in ("blue", "red")}
     t_of = lambda e: e.get("t", e.get("end_sec", 0.0))  # 예전 timeline 이벤트는 t 가 없다
     inside = lambda t: any(s["start_sec"] <= t <= s["end_sec"] for s in segments)
     picked = sorted((evs[i] for i in event_ids if i in evs and inside(t_of(evs[i]))), key=t_of)

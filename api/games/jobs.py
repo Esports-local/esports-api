@@ -4,7 +4,8 @@ import time
 
 from api.exceptions import ApiError
 from api.games import analyzer
-from matches.models import AnalyzeStatus, GameVideo
+from matches.models import AnalyzeStatus, GameVideo, Player
+from matches.teams_ko import TEAMS_KO
 from matches.outputs import save_video, work_dir
 
 DEFAULT_STAGES = ["header", "preprocess", "segments", "roi_ocr", "asr", "timeline", "context", "shorts"]  # header 는 경기·세트가 있을 때만
@@ -45,11 +46,20 @@ def start(v: GameVideo, stages: list[str], params: dict | None = None) -> GameVi
             stages = [s for s in stages if s != "header"]
             if not stages:
                 raise ApiError("경기 정보(header)를 만들려면 영상에 op.gg 경기 번호와 세트가 있어야 합니다")
+    if "asr" in stages:  # 받아쓰기 고유명사 교정에 선수·팀 이름 사전을 넘긴다 (analyzer 가 이 경기 것만 고름)
+        params = {**(params or {}), "asr": {**(params or {}).get("asr", {}), "terms_extra": terms_extra()}}
     job_id = f"game{v.id}-{int(time.time())}"
     analyzer.start_job(job_id, name, stages, params)
     v.job_id, v.error, v.analyze_status = job_id, "", AnalyzeStatus.RUNNING
     v.save(update_fields=["job_id", "error", "analyze_status", "updated_at"])
     return v
+
+
+def terms_extra() -> list[dict]:
+    """analyzer asr.terms_extra: 선수(Player 사전)·팀(TEAMS_KO) 한국어 표기 [{text, kind, name}]."""
+    out = [{"text": p.name_ko, "kind": "player", "name": p.name} for p in Player.objects.exclude(name_ko="")]
+    out += [{"text": ko, "kind": "team", "name": acr} for acr, ko in TEAMS_KO.items() if ko != acr]
+    return out
 
 
 def refresh(v: GameVideo) -> dict | None:

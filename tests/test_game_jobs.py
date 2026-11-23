@@ -51,7 +51,9 @@ class GameJobTest(TestCase):
         v = GameVideo.objects.get()
         self.assertEqual((v.opgg_match, v.set_number), (32706, 2))
         args = self.mocks[1].call_args.args
-        self.assertEqual((args[2], args[3]), (["header", "asr"], {"header": {"match": 32706, "set": 2}}))
+        self.assertEqual((args[2], args[3]["header"]), (["header", "asr"], {"match": 32706, "set": 2}))
+        extra = args[3]["asr"]["terms_extra"]  # 받아쓰기 교정에 선수·팀 이름 사전
+        self.assertIn({"text": "젠지", "kind": "team", "name": "GEN"}, extra)
         GameVideo.objects.update(analyze_status="done")
         bad = self.client.post("/games", {**body, "set": "x"}, content_type="application/json")
         self.assertEqual(bad.status_code, 400)
