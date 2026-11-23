@@ -23,6 +23,8 @@ LoL 중계 분석 → 숏폼의 백엔드 (Django + DRF). 세트 영상과 analy
 | 16 | GET | `/games/{id}/shorts` | 세트의 숏폼 목록 (최근순) |
 | 17 | GET | `/shorts/{id}` | 숏폼 상태·재생 주소·렌더 시간. 끝나지 않았으면 analyzer 상태로 갱신. `bgm`: 깐 BGM {title, source, license, attribution} |
 | 18 | POST | `/games/{id}/shorts/query` | 모음 숏폼 요청 글 `{text}` → 조건 `{text, filter: {killer, type, team, tag}, title, note, error}` (analyzer LLM, 같은 글은 1시간 저장, 실패하면 error 만) |
+| 19 | GET | `/games/{id}/cuts/reviews` | 장면 전환 검수 `{reviews: [{transition_id, verdict, updated_at}], summary: {total, pass, fail, unchecked}}` (segments 를 다시 돌려 시각·종류가 바뀐 전환은 빠짐) |
+| 20 | POST | `/games/{id}/cuts/{transition_id}/review` | 전환 하나 검수 `{verdict: pass | fail | null}` (null 이면 지움) |
 
 ### 스킬 사용 · 선택 평가 (`/skills`)
 Claude Code 플러그인 `esports-dev`([dev-workflow](https://github.com/Esports-local/dev-workflow))의 스킬이 얼마나 쓰이고 제대로 골라지는지 저장한다. 경기 데이터와는 무관하다. 스펙 시트 번호는 아직 없다.
@@ -81,7 +83,7 @@ docker compose exec api python manage.py test
 | Short | 숏폼 하나: key(입력 해시), 이벤트·구간, 상태, 저장소 key, 렌더 시간, 시도 횟수 |
 | Player | 선수 이름 사전: 영어 이름(op.gg) → 한국어 표기 (Faker → 페이커). 숏폼 자막을 만들 때 바꿔 씀. 내용은 코드 `matches/players_ko.py`가 기준이고 `sync_players`(api 컨테이너를 띄울 때 자동)가 넣음. 새 선수는 그 파일에 한 줄 추가. 팀 이름은 표 없이 코드 `matches/teams_ko.py`(GEN → 젠지). 두 사전은 분석할 때 받아쓰기 교정(`asr.terms_extra`)에도 넘긴다 |
 | LineReview | 대사 하나의 사람 검수 (고친 문장, O/X, 검수 당시 ASR 원문). 분석 결과와 따로 두어 다시 분석해도 남고, ASR 원문이 바뀌면 그 검수는 쓰지 않는다 |
-| Team · Match · MatchGame · GamePlayer | 예전에 api 가 op.gg 로 채우던 표. 지금은 쓰지 않는다 (지울지 결정 전) |
+| CutReview | 장면 전환 하나의 사람 검수 (통과·불통, 검수 당시 전환 시각·종류). 분석 결과와 따로 두어 다시 분석해도 남음 |
 
 ## 테이블 (`skills` 앱)
 | 테이블 | 내용 |
