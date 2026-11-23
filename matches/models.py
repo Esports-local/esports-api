@@ -182,6 +182,7 @@ class Short(models.Model):
     status = models.CharField(max_length=10, choices=ShortStatus.choices, default=ShortStatus.QUEUED)
     storage_key = models.CharField(max_length=300, blank=True)  # shorts/<key>.mp4 (done 일 때)
     render_sec = models.FloatField(null=True, blank=True)
+    bgm = models.JSONField(default=dict, blank=True)  # 깐 BGM {title, source, license, attribution} (analyzer 렌더 기록)
     attempts = models.PositiveIntegerField(default=0)
     error = models.TextField(blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

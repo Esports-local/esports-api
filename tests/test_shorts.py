@@ -41,13 +41,13 @@ class ShortsTest(TestCase):
     def post(self, body):
         return self.client.post(f"/games/{self.v.id}/shorts", body, content_type="application/json")
 
-    def test_events_filter_and_clip(self, _src):
-        events = self.client.get(f"/games/{self.v.id}/events?type=kill&player=doran").json()["events"]
-        self.assertEqual([e["id"] for e in events], [1, 2])
-        self.assertEqual(events[0]["clip"], {"start_sec": 94.0, "end_sec": 104.0})
-        tower = self.client.get(f"/games/{self.v.id}/events?type=tower").json()["events"][0]
-        self.assertEqual(tower["clip"]["start_sec"], 0.0)  # 영상 시작 앞으로 나가지 않음
-        self.assertEqual(self.client.get(f"/games/{self.v.id}/events?type=dragon").status_code, 400)
+    def test_events_and_clip(self, _src):
+        body = self.client.get(f"/games/{self.v.id}/events").json()
+        events = {e["id"]: e for e in body["events"]}
+        self.assertEqual(sorted(events), [1, 2, 3])  # 거르지 않고 전부
+        self.assertEqual(events[1]["clip"], {"start_sec": 94.0, "end_sec": 104.0})
+        self.assertEqual(events[3]["clip"]["start_sec"], 0.0)  # 영상 시작 앞으로 나가지 않음
+        self.assertEqual(body["scenes"], [])  # shorts 단계 결과 없음
         empty = GameVideo.objects.create(title="빈", work_name="empty")
         self.assertEqual(self.client.get(f"/games/{empty.id}/events").status_code, 404)
 
@@ -67,7 +67,7 @@ class ShortsTest(TestCase):
             body = res.json()
             self.assertEqual(body["segments"], [{"start_sec": 94.0, "end_sec": 109.0}])  # 겹친 두 구간을 합침
             self.assertEqual((body["status"], body["attempts"], body["duration_sec"]), ("queued", 1, 15.0))
-            key, video, segments, title = cs.call_args.args
+            key, video, segments, title = cs.call_args.args[:4]
             self.assertNotIn("subtitles", body)  # 숏폼에 자막을 넣지 않는다
             self.assertEqual(title, "T1 vs BLG · 킬 2")
             again = self.post({"event_ids": [1, 2]})
@@ -78,11 +78,12 @@ class ShortsTest(TestCase):
         with mock.patch("api.shorts.shorts.analyzer.create_short", side_effect=lambda key, *a: analyzer_state(key)):
             sid = self.post({"event_ids": [1]}).json()["id"]
         short = Short.objects.get(pk=sid)
-        done = analyzer_state(short.key, "succeeded", output=f"t/shorts/{short.key}.mp4", render_sec=2.8)
+        done = analyzer_state(short.key, "succeeded", output=f"t/shorts/{short.key}.mp4", render_sec=2.8,
+                              bgm={"title": "곡", "attribution": ""})
         with mock.patch("api.shorts.shorts.analyzer.get_short", return_value=done), \
                 mock.patch("api.shorts.shorts.storage.upload_file") as up:
             body = self.client.get(f"/shorts/{sid}").json()
-        self.assertEqual((body["status"], body["render_sec"]), ("done", 2.8))
+        self.assertEqual((body["status"], body["render_sec"], body["bgm"]["title"]), ("done", 2.8, "곡"))
         self.assertTrue(body["video_url"].endswith(f"/shorts/{short.key}.mp4"))
         self.assertEqual(up.call_args.args[1], f"shorts/{short.key}.mp4")
         self.assertEqual(self.client.get(f"/games/{self.v.id}/shorts").json()["shorts"][0]["id"], sid)
@@ -117,10 +118,11 @@ class ShortsTest(TestCase):
 CLIPS = [
     {"event_id": 11, "t": 1320.5, "game_time": "15:10", "type": "kill", "team": "red", "killer": "red_jungle",
      "victims": ["blue_bot"], "assists": [], "tags": [], "area": "mid_lane", "start_sec": 1314.0, "end_sec": 1324.0,
-     "on_screen": "live", "scene": "c4", "replay": {"start_sec": 1370.7, "end_sec": 1405.5, "cuts": ["cut-45"]}},
+     "on_screen": "live", "scene": "c4", "replay": {"start_sec": 1370.7, "end_sec": 1405.5, "cuts": ["cut-45"]},
+     "score": {"blue": 3, "red": 4}},
     {"event_id": 12, "t": 1327.7, "game_time": "15:17", "type": "kill", "team": "blue", "killer": "blue_support",
      "victims": ["red_jungle"], "assists": ["blue_bot"], "tags": [], "start_sec": 1323.1, "end_sec": 1330.7,
-     "on_screen": "live", "scene": "c4", "replay": None},
+     "on_screen": "live", "scene": "c4", "replay": None, "score": {"blue": 4, "red": 4}},
     {"event_id": 14, "t": 1452.0, "game_time": "17:22", "type": "tower", "team": "red", "killer": None,
      "start_sec": 1449.4, "end_sec": 1458.1, "on_screen": "live", "scene": None, "replay": None},
 ]
@@ -154,12 +156,6 @@ class ShortsClipsTest(TestCase):
         self.assertEqual(ev["replay"]["cuts"], ["cut-45"])
         self.assertEqual([(s["id"], [e["id"] for e in s["events"]], s["title"], s["clip"]) for s in body["scenes"]],
                          [("c4", [11, 12], "듀로의 즉시 복수", {"start_sec": 1313.5, "end_sec": 1336.5})])
-        ids = lambda q: [e["id"] for e in self.client.get(f"/games/{self.v.id}/events?{q}").json()["events"]]
-        self.assertEqual(ids("killer=ruler"), [])
-        self.assertEqual(ids("killer=kanavi"), [11])
-        self.assertEqual(ids("player=ruler"), [11, 12])  # 데스·도움 포함
-        self.assertEqual(ids("killer=blue_support"), [12])
-        self.assertEqual(ids("team=red&type=kill"), [11])
 
     def test_create_from_segments(self, _src):
         with mock.patch("api.shorts.shorts.analyzer.create_short", side_effect=lambda key, *a: analyzer_state(key)) as cs:
@@ -176,18 +172,40 @@ class ShortsClipsTest(TestCase):
                              400, bad)
 
 
-    def test_query_fills_filter(self, _src):
+    def test_query_endpoint(self, _src):
         from django.core.cache import cache
         cache.clear()
         res = {"filter": {"killer": "red_jungle", "type": "kill"}, "title": "카나비 킬 모음", "note": None, "error": None}
+        url = f"/games/{self.v.id}/shorts/query"
+        post = lambda body: self.client.post(url, body, content_type="application/json")
         with mock.patch("api.shorts.shorts.analyzer.parse_query", return_value=res) as pq:
-            body = self.client.get(f"/games/{self.v.id}/events", {"q": "카나비 킬 모음"}).json()
-        self.assertEqual([e["id"] for e in body["events"]], [11])
-        self.assertEqual((body["query"]["title"], body["query"]["text"]), ("카나비 킬 모음", "카나비 킬 모음"))
+            body = post({"text": "카나비 킬 모음"}).json()
+        self.assertEqual(body, {"text": "카나비 킬 모음", **res})
         self.assertIn("red_jungle", pq.call_args.args[1])  # 선수 목록은 context 결과로
         with mock.patch("api.shorts.shorts.analyzer.parse_query", return_value=res) as pq2:
-            self.client.get(f"/games/{self.v.id}/events", {"q": "카나비 킬 모음"})
+            post({"text": "카나비 킬 모음"})
         self.assertEqual(pq2.call_count, 0)  # 같은 요청 글은 저장해 둔 결과
         with mock.patch("api.shorts.shorts.analyzer.parse_query", side_effect=ApiError("analyzer 에 연결하지 못했습니다", 502)):
-            body = self.client.get(f"/games/{self.v.id}/events", {"q": "아무거나"}).json()
-        self.assertEqual((len(body["events"]), body["query"]["error"]), (3, "analyzer 에 연결하지 못했습니다"))
+            body = post({"text": "아무거나"}).json()
+        self.assertEqual((body["filter"], body["error"]), ({}, "analyzer 에 연결하지 못했습니다"))
+        for bad in ({}, {"text": ""}, {"text": "가" * 201}, {"text": 3}):
+            self.assertEqual(post(bad).status_code, 400, bad)
+
+
+    def test_overlay_title_and_captions(self, _src):
+        from api.shorts import shorts as sh
+        v = self.v
+        v.header = {"match": {"year": 2026, "league": "LCK", "name": "Grand final: GEN vs HLE", "set": 1},
+                    "teams": {"blue": {"name": "GEN"}, "red": {"name": "HLE"}}}
+        v.save(update_fields=["header"])
+        ov = sh.overlay(v, [11, 12, 14], [{"start_sec": 1313.5, "end_sec": 1336.5}], "듀로의 즉시 복수")
+        self.assertEqual(ov["title_lines"], ["2026 LCK 결승 1세트", "듀로의 즉시 복수"])
+        self.assertEqual(ov["captions"], [
+            {"start_sec": 1320.5, "end_sec": 1326.5, "lines": ["Kanavi, Ruler 잡고", "킬 GEN 3 : 4 HLE"]},
+            {"start_sec": 1327.7, "end_sec": 1333.7, "lines": ["Duro, Kanavi 잡고", "킬 GEN 4 : 4 HLE"]}])  # 타워(14)는 구간 밖
+        with mock.patch("api.shorts.shorts.analyzer.create_short", side_effect=lambda key, *a: analyzer_state(key)) as cs:
+            self.client.post(f"/games/{v.id}/shorts", {"segments": [{"start_sec": 1313.5, "end_sec": 1336.5}],
+                                                     "title": "듀로의 즉시 복수", "event_ids": [11, 12]},
+                             content_type="application/json")
+        self.assertEqual(cs.call_args.args[4], ["2026 LCK 결승 1세트", "듀로의 즉시 복수"])
+        self.assertEqual(len(cs.call_args.args[5]), 2)

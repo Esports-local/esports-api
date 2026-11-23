@@ -50,11 +50,12 @@ def cancel_job(job_id: str) -> dict:
     return _call("POST", f"/jobs/{job_id}/cancel")
 
 
-def create_short(key: str, video: str, segments: list[dict], title: str | None) -> dict:
+def create_short(key: str, video: str, segments: list[dict], title: str | None,
+                 title_lines: list[str] | None = None, captions: list[dict] | None = None) -> dict:
     """POST /shorts — 렌더를 줄에 세운다 (다른 렌더가 돌고 있어도 거절하지 않음). 같은 key·내용이면 기존 상태,
     실패한 것이면 다시 줄을 세운다. 응답 {key, status: queued|rendering|succeeded|failed, output, render_sec, error}"""
-    return _call("POST", "/shorts", json={"key": key, "video": video, "segments": segments,
-                                         "title": title})
+    return _call("POST", "/shorts", json={"key": key, "video": video, "segments": segments, "title": title,
+                                         "title_lines": title_lines or [], "captions": captions or []})
 
 
 def parse_query(text: str, players: dict[str, str]) -> dict:

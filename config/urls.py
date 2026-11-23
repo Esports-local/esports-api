@@ -20,9 +20,10 @@ urlpatterns = [
     path("games/<int:pk>/analyze", games.game_analyze),
     path("games/<int:pk>/cancel", games.game_cancel),
     path("sources", games.source_list),
-    # 경기 이벤트·숏폼 (14~17번)
+    # 경기 이벤트·숏폼 (14~18번)
     path("games/<int:pk>/events", shorts.game_events),
     path("games/<int:pk>/shorts", shorts.game_shorts),
+    path("games/<int:pk>/shorts/query", shorts.game_shorts_query),
     path("shorts/<int:pk>", shorts.short_detail),
     # skills (Claude Code 스킬 사용 기록·선택 평가)
     path("skills", skills.skill_list),

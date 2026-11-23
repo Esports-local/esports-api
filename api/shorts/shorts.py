@@ -21,7 +21,6 @@ from config import storage
 from matches.models import GameVideo, Short, ShortStatus
 from matches.outputs import OUTPUTS_ROOT
 
-EVENT_TYPES = ("kill", "tower", "objective")
 PRE_SEC, POST_SEC, MAX_PAD = 6.0, 4.0, 15.0
 TYPE_LABEL = {"kill": "킬", "tower": "타워", "objective": "오브젝트"}
 
@@ -104,10 +103,11 @@ def _from_clip(c: dict, players: dict) -> dict:
                                           ("assists", names(assists))) if v},
             "tags": c.get("tags") or [], "area": c.get("area"), "on_screen": c.get("on_screen"),
             "scene": c.get("scene"), "clip": {"start_sec": c["start_sec"], "end_sec": c["end_sec"]},
-            "replay": c.get("replay")}
+            "replay": c.get("replay"), "score": c.get("score")}
 
 
 OBJECT_LABEL = {"dragon": "용", "elder": "장로", "baron": "바론", "herald": "전령", "grubs": "유충", "atakhan": "아타칸"}
+DRAKE_LABEL = {"water": "바다", "fire": "화염", "earth": "대지", "air": "바람", "hextech": "마법공학", "chemtech": "화학공학"}
 
 
 def auto_title(evs: list[dict]) -> str:
@@ -154,12 +154,59 @@ def title_for(v: GameVideo, picked: list[dict]) -> str:
     return f"{head} · " + ", ".join(f"{k} {n}" for k, n in counts.items())
 
 
-def make_key(v: GameVideo, segments: list[dict], title: str) -> str:
-    """같은 입력이면 같은 key. timeline 을 다시 돌리면(created_at 이 바뀜) 다른 key."""
+LAYOUT_VERSION = "v3"  # 렌더 화면 구성 (v2: 11-23 위 제목 + 가운데 1180x1080 + 설명 자막, v3: 자막을 킬 시각부터). 바꾸면 다시 렌더
+
+
+def make_key(v: GameVideo, segments: list[dict], title: str, event_ids: list | None = None) -> str:
+    """같은 입력이면 같은 key. timeline 을 다시 돌리거나(created_at 이 바뀜) 화면 구성이 바뀌면 다른 key."""
     version = (v.results.get("timeline") or {}).get("created_at", "")
-    raw = json.dumps({"work": v.work_name, "version": version, "segments": segments, "title": title},
+    raw = json.dumps({"work": v.work_name, "version": version, "segments": segments, "title": title,
+                      "events": sorted(event_ids or []), "layout": LAYOUT_VERSION},
                      ensure_ascii=False, sort_keys=True)
     return "s" + hashlib.sha256(raw.encode()).hexdigest()[:24]
+
+
+def match_line(v: GameVideo) -> str:
+    """영상 위 제목 첫 줄: "2026 LCK 결승 1세트" (경기 정보가 없으면 영상 이름)."""
+    m = (v.header or {}).get("match") or {}
+    if not m:
+        return v.title
+    stage = "결승" if "final" in (m.get("name") or "").lower() else ""
+    return " ".join(str(x) for x in (m.get("year"), m.get("league"), stage, f"{m['set']}세트" if m.get("set") else "") if x)
+
+
+def overlay(v: GameVideo, event_ids: list, segments: list[dict], title: str) -> dict:
+    """렌더에 넘길 위 제목 줄과 설명 자막 (이벤트 데이터로 틀을 채움, LLM 없음).
+
+    킬: "{킬한 선수}, {당한 선수} 잡고" / "킬 {블루 팀} {점수} : {점수} {레드 팀}" (당한 선수를 모르면 "{킬한 선수} 킬").
+    오브젝트: "{팀} {용 종류·바론…}". 타워는 넣지 않는다. 이벤트 시각(op.gg)부터 다음 자막 전까지(길어도 6초).
+    """
+    try:
+        evs = {e["id"]: e for e in events(v)}
+    except ApiError:
+        evs = {}
+    teams = {s: ((v.header or {}).get("teams") or {}).get(s, {}).get("name") or s.upper() for s in ("blue", "red")}
+    t_of = lambda e: e.get("t", e.get("end_sec", 0.0))  # 예전 timeline 이벤트는 t 가 없다
+    inside = lambda t: any(s["start_sec"] <= t <= s["end_sec"] for s in segments)
+    picked = sorted((evs[i] for i in event_ids if i in evs and inside(t_of(evs[i]))), key=t_of)
+    caps = []
+    for e in picked:
+        killer = (e.get("killer") or {}).get("name") if isinstance(e.get("killer"), dict) else None
+        if e["type"] == "kill" and killer:
+            victims = [w["name"] for w in e.get("victims") or [] if isinstance(w, dict) and w.get("name")]
+            lines = [f"{killer}, {', '.join(victims)} 잡고" if victims else f"{killer} 킬"]
+            if e.get("score"):
+                lines.append(f"킬 {teams['blue']} {e['score']['blue']} : {e['score']['red']} {teams['red']}")
+        elif e["type"] == "objective":
+            kind, _, drake = (e.get("subtype") or "").partition(":")
+            label = f"{DRAKE_LABEL.get(drake, '')} 용".strip() if kind == "dragon" else OBJECT_LABEL.get(kind, "오브젝트")
+            lines = [f"{teams.get(e.get('team'), '')} {label}".strip()]
+        else:
+            continue
+        caps.append({"start_sec": round(t_of(e), 2), "end_sec": round(t_of(e) + 6.0, 2), "lines": lines})
+    for a, b in zip(caps, caps[1:]):  # 다음 자막이 나오면 앞 자막은 끝
+        a["end_sec"] = min(a["end_sec"], b["start_sec"])
+    return {"title_lines": [x for x in (match_line(v), title) if x], "captions": caps}
 
 
 def request(v: GameVideo, event_ids: list[int], pre: float, post: float) -> tuple[Short, bool]:
@@ -175,7 +222,7 @@ def request(v: GameVideo, event_ids: list[int], pre: float, post: float) -> tupl
     picked = sorted((by_id[i] for i in event_ids), key=lambda e: e["start_sec"])
     segments = merge([clip(e, v.duration, pre, post) for e in picked])
     title = title_for(v, picked)
-    key = make_key(v, segments, title)
+    key = make_key(v, segments, title, event_ids)
 
     return _get_or_submit(v, key, sorted(event_ids), segments, title)
 
@@ -195,7 +242,7 @@ def request_segments(v: GameVideo, segments: list[dict], title: str, event_ids: 
             raise ApiError(f"구간이 영상 길이({v.duration:.0f}초)를 넘습니다")
         spans.append({"start_sec": round(float(a), 2), "end_sec": round(float(b), 2)})
     segs = merge(spans)
-    key = make_key(v, segs, title)
+    key = make_key(v, segs, title, event_ids)
     return _get_or_submit(v, key, sorted(event_ids or []), segs, title)
 
 
@@ -221,7 +268,9 @@ def _submit(short: Short) -> None:
     short.status, short.error, short.finished_at = ShortStatus.QUEUED, "", None
     try:
         # 구간 분석 영상(playback_name)도 원본 기준 시각이라 원본 파일을 그대로 자른다
-        state = analyzer.create_short(short.key, v.playback_name or jobs.source_for(v), short.segments, short.title)
+        ov = overlay(v, short.event_ids, short.segments, short.title)
+        state = analyzer.create_short(short.key, v.playback_name or jobs.source_for(v), short.segments, short.title,
+                                      ov["title_lines"], ov["captions"])
     except ApiError as e:
         short.status, short.error = ShortStatus.FAILED, e.message
         short.save()
@@ -266,6 +315,7 @@ def _apply(short: Short, state: dict) -> None:
         else:
             short.status, short.storage_key, short.error = ShortStatus.DONE, key, ""
             short.render_sec = state.get("render_sec")
+            short.bgm = state.get("bgm") or {}
         short.finished_at = timezone.now()
     short.save()
 
@@ -274,7 +324,7 @@ def as_json(short: Short) -> dict:
     """17번 응답 형식."""
     return {
         "id": short.id, "game_id": short.video_id, "status": short.status, "event_ids": short.event_ids,
-        "segments": short.segments, "title": short.title,
+        "segments": short.segments, "title": short.title, "bgm": short.bgm or None,
         "duration_sec": round(sum(s["end_sec"] - s["start_sec"] for s in short.segments), 2),
         "video_url": storage.public_url(short.storage_key) if short.status == ShortStatus.DONE else None,
         "render_sec": short.render_sec, "attempts": short.attempts, "error": short.error or None,
