@@ -12,8 +12,8 @@ from matches.models import GameVideo, LineReview
 from matches.screen import filter_runs, snapshot, static_values
 
 GAME_NOT_FOUND = "영상을 찾을 수 없습니다"
-STAGES = ["header", "preprocess", "segments", "roi_ocr", "asr", "timeline", "evaluate"]
-RUNNABLE = ["header", "preprocess", "segments", "roi_ocr", "asr", "timeline"]  # ui 에서 고를 수 있는 단계
+STAGES = ["header", "preprocess", "segments", "roi_ocr", "asr", "timeline", "context", "shorts", "evaluate"]
+RUNNABLE = ["header", "preprocess", "segments", "roi_ocr", "asr", "timeline", "context", "shorts"]  # ui 에서 고를 수 있는 단계
 ROLE_ORDER = ["top", "jungle", "mid", "bot", "support"]
 
 
