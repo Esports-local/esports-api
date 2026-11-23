@@ -79,7 +79,7 @@ docker compose exec api python manage.py test
 |---|---|
 | GameVideo | 세트 영상 하나 (해설 언어별): analyzer 결과 JSON, 경기 정보(header), op.gg 경기 번호·세트, 원본 파일 이름(분석 대상 `video_name`, 재생·숏폼용 `playback_name`) |
 | Short | 숏폼 하나: key(입력 해시), 이벤트·구간, 상태, 저장소 key, 렌더 시간, 시도 횟수 |
-| Player | 선수 이름 사전: 영어 이름(op.gg) → 한국어 표기 (Faker → 페이커). 숏폼 자막을 만들 때 바꿔 씀. 내용은 코드 `matches/players_ko.py`가 기준이고 `sync_players`(api 컨테이너를 띄울 때 자동)가 넣음. 새 선수는 그 파일에 한 줄 추가 |
+| Player | 선수 이름 사전: 영어 이름(op.gg) → 한국어 표기 (Faker → 페이커). 숏폼 자막을 만들 때 바꿔 씀. 내용은 코드 `matches/players_ko.py`가 기준이고 `sync_players`(api 컨테이너를 띄울 때 자동)가 넣음. 새 선수는 그 파일에 한 줄 추가. 팀 이름은 표 없이 코드 `matches/teams_ko.py`(GEN → 젠지). 두 사전은 분석할 때 받아쓰기 교정(`asr.terms_extra`)에도 넘긴다 |
 | LineReview | 대사 하나의 사람 검수 (고친 문장, O/X, 검수 당시 ASR 원문). 분석 결과와 따로 두어 다시 분석해도 남고, ASR 원문이 바뀌면 그 검수는 쓰지 않는다 |
 | Team · Match · MatchGame · GamePlayer | 예전에 api 가 op.gg 로 채우던 표. 지금은 쓰지 않는다 (지울지 결정 전) |
 
